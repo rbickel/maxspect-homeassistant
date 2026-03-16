@@ -1,0 +1,193 @@
+"""Gizwits Cloud REST API client for Maxspect devices.
+
+Handles authentication, token management, and device control via the
+Gizwits Open API.  Used for writing commands (Mode changes etc.) since
+the Gizwits LAN protocol writes are ignored by the Maxspect MCU firmware.
+
+Read/status monitoring stays on the LAN client for speed and locality.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+import aiohttp
+
+_LOGGER = logging.getLogger(__name__)
+
+# Gizwits Cloud API base URLs per region
+REGION_URLS: dict[str, str] = {
+    "eu": "https://euapi.gizwits.com",
+    "us": "https://usapi.gizwits.com",
+    "cn": "https://api.gizwits.com",
+}
+
+# Token refresh buffer — refresh 5 minutes before actual expiry
+_TOKEN_REFRESH_BUFFER = 300
+
+
+class GizwitsCloudError(Exception):
+    """Error communicating with the Gizwits Cloud API."""
+
+
+class GizwitsCloudClient:
+    """Async client for the Gizwits Cloud REST API."""
+
+    def __init__(
+        self,
+        app_id: str,
+        username: str,
+        password: str,
+        region: str = "eu",
+        session: aiohttp.ClientSession | None = None,
+    ) -> None:
+        self._app_id = app_id
+        self._username = username
+        self._password = password
+        self._base_url = REGION_URLS.get(region, REGION_URLS["eu"])
+        self._owns_session = session is None
+        self._session = session
+        self._token: str | None = None
+        self._token_expiry: float = 0
+        self._uid: str | None = None
+        self._did: str | None = None
+
+    @property
+    def did(self) -> str | None:
+        """Return the device ID (set after bind/discover)."""
+        return self._did
+
+    @did.setter
+    def did(self, value: str) -> None:
+        """Set the device ID directly (e.g. from saved config)."""
+        self._did = value
+
+    # -- Session management --------------------------------------------
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+            self._owns_session = True
+        return self._session
+
+    async def async_close(self) -> None:
+        """Close the HTTP session if we own it."""
+        if self._owns_session and self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    # -- Authentication ------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {
+            "X-Gizwits-Application-Id": self._app_id,
+            "Content-Type": "application/json",
+        }
+        if self._token:
+            headers["X-Gizwits-User-token"] = self._token
+        return headers
+
+    async def async_login(self) -> None:
+        """Log in and obtain a user token."""
+        session = self._get_session()
+        url = f"{self._base_url}/app/login"
+        payload = {"username": self._username, "password": self._password}
+
+        async with session.post(url, json=payload, headers=self._headers()) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise GizwitsCloudError(
+                    f"Login failed (HTTP {resp.status}): {body}"
+                )
+            data = await resp.json(content_type=None)
+
+        self._token = data["token"]
+        self._uid = data.get("uid")
+        self._token_expiry = time.time() + data.get("expire_at", 7200)
+        _LOGGER.debug("Cloud login OK, uid=%s", self._uid)
+
+    async def _ensure_token(self) -> None:
+        """Refresh the token if expired or about to expire."""
+        if not self._token or time.time() >= self._token_expiry - _TOKEN_REFRESH_BUFFER:
+            await self.async_login()
+
+    # -- Device discovery ----------------------------------------------
+
+    async def async_discover_device(self, product_key: str) -> str:
+        """Find the first online device matching the product key.
+
+        Returns the device DID and stores it for subsequent calls.
+        """
+        await self._ensure_token()
+        session = self._get_session()
+        url = f"{self._base_url}/app/bindings"
+
+        async with session.get(url, headers=self._headers()) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise GizwitsCloudError(
+                    f"Bindings request failed (HTTP {resp.status}): {body}"
+                )
+            data = await resp.json(content_type=None)
+
+        for dev in data.get("devices", []):
+            if dev.get("product_key") == product_key:
+                self._did = dev["did"]
+                _LOGGER.debug(
+                    "Discovered device did=%s (online=%s)",
+                    self._did, dev.get("is_online"),
+                )
+                return self._did
+
+        raise GizwitsCloudError(
+            f"No device found for product_key {product_key}"
+        )
+
+    # -- Device control ------------------------------------------------
+
+    async def async_set_mode(self, mode: int, did: str | None = None) -> None:
+        """Send a Mode control command to the device."""
+        target = did or self._did
+        if not target:
+            raise GizwitsCloudError("No device ID — call async_discover_device first")
+
+        await self._ensure_token()
+        session = self._get_session()
+        url = f"{self._base_url}/app/control/{target}"
+        payload: dict[str, Any] = {"attrs": {"Mode": mode}}
+
+        async with session.post(url, json=payload, headers=self._headers()) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise GizwitsCloudError(
+                    f"Control failed (HTTP {resp.status}): {body}"
+                )
+
+        _LOGGER.debug("Cloud control: Mode=%d sent to %s", mode, target)
+
+    async def async_get_device_status(
+        self, did: str | None = None,
+    ) -> dict[str, Any]:
+        """Get latest device attributes from the cloud."""
+        target = did or self._did
+        if not target:
+            raise GizwitsCloudError("No device ID")
+
+        await self._ensure_token()
+        session = self._get_session()
+        url = f"{self._base_url}/app/devdata/{target}/latest"
+
+        async with session.get(url, headers=self._headers()) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise GizwitsCloudError(
+                    f"Status request failed (HTTP {resp.status}): {body}"
+                )
+            return await resp.json(content_type=None)
+
+    async def async_validate(self, product_key: str) -> str:
+        """Login, discover device, return DID. Used by config flow."""
+        await self.async_login()
+        return await self.async_discover_device(product_key)

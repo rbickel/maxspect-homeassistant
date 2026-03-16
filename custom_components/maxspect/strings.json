@@ -1,0 +1,64 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Maxspect device",
+        "description": "Enter the IP address of your Maxspect device on the local network.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "cloud": {
+        "title": "Gizwits Cloud account",
+        "description": "Enter your Syna-G+ Cloud account credentials. These are needed to send control commands (on/off, mode changes) to the device.",
+        "data": {
+          "cloud_username": "Email",
+          "cloud_password": "Password",
+          "cloud_region": "Region"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device. Check the IP address and ensure the device is on the same network.",
+      "cloud_auth_failed": "Cloud login failed. Check your Syna-G+ Cloud credentials and region.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "entity": {
+    "switch": {
+      "pump_power": {
+        "name": "Pump power"
+      }
+    },
+    "sensor": {
+      "mode": {
+        "name": "Mode"
+      },
+      "ch1_rpm": {
+        "name": "Channel 1 RPM"
+      },
+      "ch2_rpm": {
+        "name": "Channel 2 RPM"
+      },
+      "ch1_voltage": {
+        "name": "Channel 1 voltage"
+      },
+      "ch2_voltage": {
+        "name": "Channel 2 voltage"
+      },
+      "ch1_power": {
+        "name": "Channel 1 power"
+      },
+      "ch2_power": {
+        "name": "Channel 2 power"
+      },
+      "timestamp": {
+        "name": "Device timestamp"
+      }
+    }
+  }
+}

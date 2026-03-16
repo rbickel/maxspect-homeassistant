@@ -1,0 +1,5 @@
+_agent_workdir/
+ha-config/
+ha-venv/
+native app/
+__pycache__/
