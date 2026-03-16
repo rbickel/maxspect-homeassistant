@@ -3,6 +3,10 @@
   "name": "Maxspect",
   "codeowners": ["@your-github-username"],
   "config_flow": true,
+  "dependencies": ["dhcp"],
+  "dhcp": [
+    {"macaddress": "686725"}
+  ],
   "documentation": "https://github.com/your-github-username/maxspect-homeassistant",
   "integration_type": "device",
   "iot_class": "cloud_polling",

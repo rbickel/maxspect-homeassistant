@@ -24,6 +24,8 @@ from .const import (
     CONF_CLOUD_PASSWORD,
     CONF_CLOUD_REGION,
     CONF_CLOUD_USERNAME,
+    CONF_MODEL_A,
+    CONF_MODEL_B,
     DEFAULT_CLOUD_REGION,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
@@ -31,6 +33,7 @@ from .const import (
     GIZWITS_APP_ID,
     GIZWITS_PRODUCT_KEY,
     MODE_OFF,
+    MODEL_NAMES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +61,11 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         # Cloud client for write operations (may be None for legacy entries)
         self.cloud: GizwitsCloudClient | None = None
         self._cloud_did: str = entry.data.get(CONF_CLOUD_DID, "")
+
+        # Pump model configuration (from config entry)
+        self.model_a: int = entry.data.get(CONF_MODEL_A, 0)
+        self.model_b: int = entry.data.get(CONF_MODEL_B, 0)
+
         if CONF_CLOUD_USERNAME in entry.data:
             self.cloud = GizwitsCloudClient(
                 app_id=GIZWITS_APP_ID,
@@ -99,6 +107,27 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         state.is_on = mode != MODE_OFF
         self.async_set_updated_data(state)
 
+    async def async_sync_models_to_device(self) -> None:
+        """Write configured pump models to the device via cloud API."""
+        if self.cloud is None:
+            return
+        try:
+            await self.cloud.async_set_models(
+                self.model_a, self.model_b, did=self._cloud_did,
+            )
+        except GizwitsCloudError as err:
+            _LOGGER.warning("Failed to sync pump models to device: %s", err)
+
+    @property
+    def model_a_name(self) -> str:
+        """Human-readable name for pump A model."""
+        return MODEL_NAMES.get(self.model_a, f"Unknown ({self.model_a})")
+
+    @property
+    def model_b_name(self) -> str:
+        """Human-readable name for pump B model."""
+        return MODEL_NAMES.get(self.model_b, f"Unknown ({self.model_b})")
+
     async def async_seed_from_cloud(self) -> None:
         """Fetch latest device data from the cloud and seed state."""
         if self.cloud is None:
@@ -131,17 +160,10 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             except (ValueError, TypeError):
                 _LOGGER.debug("Could not parse cloud Time: %s", time_hex)
 
-        # Scalar config attributes (if the cloud happens to have them)
-        for attr_name, field_name in (
-            ("Mode", "mode"),
-            ("Time_Feed", "feed_duration"),
-            ("Model_A", "model_a"),
-            ("Model_B", "model_b"),
-            ("Wash", "wash_reminder"),
-        ):
-            val = attrs.get(attr_name)
-            if val is not None:
-                setattr(state, field_name, int(val))
+        # Scalar attributes (if the cloud happens to have them)
+        mode_val = attrs.get("Mode")
+        if mode_val is not None:
+            state.mode = int(mode_val)
 
         # Derive is_on from mode
         state.is_on = state.mode != MODE_OFF

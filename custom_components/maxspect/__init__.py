@@ -44,6 +44,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> 
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Cloud seeding failed, will rely on LAN data")
 
+    # Write configured pump models to device so it stays in sync
+    try:
+        await coordinator.async_sync_models_to_device()
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("Model sync to device failed, will retry later")
+
     # Seed coordinator.data so entities can be created immediately
     coordinator.async_set_updated_data(coordinator.client.state)
 

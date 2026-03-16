@@ -2,30 +2,50 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Maxspect device",
-        "description": "Enter the IP address of your Maxspect device on the local network.",
-        "data": {
-          "host": "Host",
-          "port": "Port"
-        }
-      },
-      "cloud": {
         "title": "Gizwits Cloud account",
-        "description": "Enter your Syna-G+ Cloud account credentials. These are needed to send control commands (on/off, mode changes) to the device.",
+        "description": "Enter your Syna-G+ Cloud account credentials to discover Maxspect devices.",
         "data": {
           "cloud_username": "Email",
           "cloud_password": "Password",
           "cloud_region": "Region"
+        }
+      },
+      "pick_device": {
+        "title": "Select device",
+        "description": "Select the Maxspect device to add.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "device_config": {
+        "title": "Device configuration",
+        "description": "Enter the local network IP address, friendly name, and pump models for {mac}.",
+        "data": {
+          "device_name": "Device name",
+          "host": "Host (IP address)",
+          "port": "Port",
+          "model_a": "Pump A model",
+          "model_b": "Pump B model"
+        }
+      },
+      "manual": {
+        "title": "Manual connection",
+        "description": "Enter the IP address of your Maxspect device on the local network.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to the device. Check the IP address and ensure the device is on the same network.",
       "cloud_auth_failed": "Cloud login failed. Check your Syna-G+ Cloud credentials and region.",
+      "no_devices_found": "No Maxspect devices found in your cloud account.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured.",
+      "not_maxspect_device": "The discovered device is not a Maxspect device."
     }
   },
   "entity": {
@@ -59,17 +79,11 @@
       "timestamp": {
         "name": "Device timestamp"
       },
-      "feed_duration": {
-        "name": "Feed duration"
-      },
       "model_a": {
         "name": "Pump A model"
       },
       "model_b": {
         "name": "Pump B model"
-      },
-      "wash_reminder": {
-        "name": "Wash reminder"
       }
     }
   }

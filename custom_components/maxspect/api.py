@@ -51,11 +51,6 @@ _LOGGER = logging.getLogger(__name__)
 # State notify polls DP 34 (Time) -- returns power + timestamp
 READ_STATE_NOTIFY = bytes([ACTION_READ]) + b"\x00\x04\x00\x00\x00\x00"
 
-# Config DPs: 19 (Time_Feed), 20 (Model_A), 21 (Model_B), 22 (Wash)
-# Bits 19-22 are in flags byte index 3 (ATTR_FLAGS_LEN-1 - 19//8 = 6-1-2 = 3)
-# Bits: 19%8=3, 20%8=4, 21%8=5, 22%8=6 → 0b01111000 = 0x78
-READ_CONFIG_DPS = bytes([ACTION_READ]) + b"\x00\x00\x00\x78\x00\x00"
-
 
 class MaxspectConnectionError(Exception):
     """Error communicating with the Maxspect device."""
@@ -75,10 +70,6 @@ class MaxspectDeviceState:
     ch2_voltage: float = 0.0
     ch2_power: int = 0
     timestamp: str = ""
-    feed_duration: int = 0    # DP 19 Time_Feed (minutes, 5-120)
-    model_a: int = 0          # DP 20 Model_A (pump A model code)
-    model_b: int = 0          # DP 21 Model_B (pump B model code)
-    wash_reminder: int = 0    # DP 22 Wash (wash reminder days)
 
     @property
     def mode_name(self) -> str:
@@ -354,7 +345,6 @@ class MaxspectClient:
         loop = asyncio.get_running_loop()
         last_heartbeat = loop.time()
         last_poll = 0.0
-        config_poll_done = False
 
         while self._connected and self._reader and self._writer:
             now = loop.time()
@@ -381,19 +371,6 @@ class MaxspectClient:
                     last_poll = now
                 except OSError:
                     _LOGGER.warning("Poll send failed to %s", self._host)
-                    self._connected = False
-                    break
-
-            # Read config DPs (19-22) once per connection
-            if not config_poll_done:
-                try:
-                    self._writer.write(
-                        _build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS)
-                    )
-                    await self._writer.drain()
-                    config_poll_done = True
-                except OSError:
-                    _LOGGER.warning("Config poll send failed to %s", self._host)
                     self._connected = False
                     break
 
@@ -474,32 +451,6 @@ class MaxspectClient:
                     MODE_NAMES.get(new_mode, "unknown"),
                 )
                 updated = True
-
-        # Config DPs (19-22): uint8 values packed sequentially
-        config_dps = [19, 20, 21, 22]
-        if any(_dp_is_flagged(flags, dp) for dp in config_dps):
-            for dp_id in config_dps:
-                if _dp_is_flagged(flags, dp_id):
-                    offset = _dp_data_offset(flags, dp_id)
-                    if offset < len(data):
-                        val = data[offset]
-                        if dp_id == 19:
-                            self._state.feed_duration = val
-                        elif dp_id == 20:
-                            self._state.model_a = val
-                        elif dp_id == 21:
-                            self._state.model_b = val
-                        elif dp_id == 22:
-                            self._state.wash_reminder = val
-            _LOGGER.debug(
-                "Config DPs from %s: feed=%d model_a=%d model_b=%d wash=%d",
-                self._host,
-                self._state.feed_duration,
-                self._state.model_a,
-                self._state.model_b,
-                self._state.wash_reminder,
-            )
-            updated = True
 
         if not updated:
             _LOGGER.debug(

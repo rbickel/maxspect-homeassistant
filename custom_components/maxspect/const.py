@@ -2,6 +2,7 @@
 
 DOMAIN = "maxspect"
 
+CONF_DEVICE_NAME = "device_name"
 DEFAULT_PORT = 12416
 DEFAULT_SCAN_INTERVAL = 30
 
@@ -10,6 +11,14 @@ CONF_CLOUD_USERNAME = "cloud_username"
 CONF_CLOUD_PASSWORD = "cloud_password"
 CONF_CLOUD_REGION = "cloud_region"
 CONF_CLOUD_DID = "cloud_did"
+CONF_MODEL_A = "model_a"
+CONF_MODEL_B = "model_b"
+
+# Pump model mapping (DP 20/21: 0=330, 1=350)
+MODEL_NAMES: dict[int, str] = {
+    0: "XF 330CE",
+    1: "XF 350CE",
+}
 
 # Maxspect "漩影WiFi" (Cool Shadow) Gizwits application
 GIZWITS_APP_ID = "b59fcef4de7a4d2ab7f4c26eb81a0537"
@@ -63,7 +72,6 @@ DP_LENGTHS: dict[int, int] = {
 
 # Polling / heartbeat intervals (seconds)
 POLL_INTERVAL = 3.0
-CONFIG_POLL_INTERVAL = 60.0
 HEARTBEAT_INTERVAL = 20.0
 
 # Discovery

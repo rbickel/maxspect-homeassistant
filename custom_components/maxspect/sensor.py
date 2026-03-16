@@ -11,7 +11,6 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfElectricPotential,
     UnitOfPower,
-    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -39,10 +38,8 @@ async def async_setup_entry(
         MaxspectPowerSensor(coordinator, host, 1),
         MaxspectPowerSensor(coordinator, host, 2),
         MaxspectTimestampSensor(coordinator, host),
-        MaxspectFeedDurationSensor(coordinator, host),
         MaxspectModelSensor(coordinator, host, "a"),
         MaxspectModelSensor(coordinator, host, "b"),
-        MaxspectWashReminderSensor(coordinator, host),
     ]
     async_add_entities(entities)
 
@@ -136,52 +133,21 @@ class MaxspectTimestampSensor(MaxspectEntity, SensorEntity):
         return ts if ts else None
 
 
-class MaxspectFeedDurationSensor(MaxspectEntity, SensorEntity):
-    """Feed duration setting (DP 19, minutes)."""
-
-    _attr_translation_key = "feed_duration"
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{host}_feed_duration"
-
-    @property
-    def native_value(self) -> int | None:
-        val = self.coordinator.data.feed_duration
-        return val if val > 0 else None
-
-
 class MaxspectModelSensor(MaxspectEntity, SensorEntity):
-    """Pump model (DP 20/21): 0 = XF 330CE, non-zero = XF 350CE."""
+    """Pump model sensor (from config, synced to device via cloud)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str, channel: str) -> None:
+    def __init__(
+        self, coordinator: MaxspectCoordinator, host: str, channel: str,
+    ) -> None:
         super().__init__(coordinator)
         self._channel = channel
         self._attr_translation_key = f"model_{channel}"
         self._attr_unique_id = f"{host}_model_{channel}"
 
     @property
-    def native_value(self) -> str | None:
-        val = self.coordinator.data.model_a if self._channel == "a" else self.coordinator.data.model_b
-        return "XF 330CE" if val == 0 else "XF 350CE"
-
-
-class MaxspectWashReminderSensor(MaxspectEntity, SensorEntity):
-    """Wash reminder interval (DP 22, days)."""
-
-    _attr_translation_key = "wash_reminder"
-    _attr_native_unit_of_measurement = UnitOfTime.DAYS
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{host}_wash_reminder"
-
-    @property
-    def native_value(self) -> int | None:
-        val = self.coordinator.data.wash_reminder
-        return val if val > 0 else None
+    def native_value(self) -> str:
+        if self._channel == "a":
+            return self.coordinator.model_a_name
+        return self.coordinator.model_b_name

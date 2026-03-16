@@ -115,10 +115,12 @@ class GizwitsCloudClient:
 
     # -- Device discovery ----------------------------------------------
 
-    async def async_discover_device(self, product_key: str) -> str:
-        """Find the first online device matching the product key.
+    async def async_list_devices(
+        self, product_key: str,
+    ) -> list[dict[str, Any]]:
+        """Return all devices matching the product key.
 
-        Returns the device DID and stores it for subsequent calls.
+        Each dict contains: did, mac, product_name, dev_alias, is_online.
         """
         await self._ensure_token()
         session = self._get_session()
@@ -132,18 +134,28 @@ class GizwitsCloudClient:
                 )
             data = await resp.json(content_type=None)
 
-        for dev in data.get("devices", []):
-            if dev.get("product_key") == product_key:
-                self._did = dev["did"]
-                _LOGGER.debug(
-                    "Discovered device did=%s (online=%s)",
-                    self._did, dev.get("is_online"),
-                )
-                return self._did
+        return [
+            dev for dev in data.get("devices", [])
+            if dev.get("product_key") == product_key
+        ]
 
-        raise GizwitsCloudError(
-            f"No device found for product_key {product_key}"
+    async def async_discover_device(self, product_key: str) -> str:
+        """Find the first online device matching the product key.
+
+        Returns the device DID and stores it for subsequent calls.
+        """
+        devices = await self.async_list_devices(product_key)
+        if not devices:
+            raise GizwitsCloudError(
+                f"No device found for product_key {product_key}"
+            )
+        dev = devices[0]
+        self._did = dev["did"]
+        _LOGGER.debug(
+            "Discovered device did=%s (online=%s)",
+            self._did, dev.get("is_online"),
         )
+        return self._did
 
     # -- Device control ------------------------------------------------
 
@@ -166,6 +178,31 @@ class GizwitsCloudClient:
                 )
 
         _LOGGER.debug("Cloud control: Mode=%d sent to %s", mode, target)
+
+    async def async_set_models(
+        self, model_a: int, model_b: int, did: str | None = None,
+    ) -> None:
+        """Write Model_A and Model_B to the device (DP 20/21)."""
+        target = did or self._did
+        if not target:
+            raise GizwitsCloudError("No device ID — call async_discover_device first")
+
+        await self._ensure_token()
+        session = self._get_session()
+        url = f"{self._base_url}/app/control/{target}"
+        payload: dict[str, Any] = {"attrs": {"Model_A": model_a, "Model_B": model_b}}
+
+        async with session.post(url, json=payload, headers=self._headers()) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise GizwitsCloudError(
+                    f"Model write failed (HTTP {resp.status}): {body}"
+                )
+
+        _LOGGER.debug(
+            "Cloud control: Model_A=%d Model_B=%d sent to %s",
+            model_a, model_b, target,
+        )
 
     async def async_get_device_status(
         self, did: str | None = None,
