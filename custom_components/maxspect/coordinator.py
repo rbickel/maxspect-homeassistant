@@ -11,7 +11,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import MaxspectClient, MaxspectConnectionError, MaxspectDeviceState
+from .api import (
+    MaxspectClient,
+    MaxspectConnectionError,
+    MaxspectDeviceState,
+    _parse_compact_telemetry,
+    _parse_state_notify,
+)
 from .cloud import GizwitsCloudClient, GizwitsCloudError
 from .const import (
     CONF_CLOUD_DID,
@@ -92,6 +98,55 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         state.mode = mode
         state.is_on = mode != MODE_OFF
         self.async_set_updated_data(state)
+
+    async def async_seed_from_cloud(self) -> None:
+        """Fetch latest device data from the cloud and seed state."""
+        if self.cloud is None:
+            return
+        try:
+            data = await self.cloud.async_get_device_status(did=self._cloud_did)
+        except GizwitsCloudError as err:
+            _LOGGER.warning("Cloud status fetch failed: %s", err)
+            return
+
+        attrs = data.get("attr", {})
+        if not attrs:
+            return
+
+        state = self.client.state
+
+        # Compact telemetry (mode, RPM, voltage, power)
+        bak24 = attrs.get("Bak24")
+        if bak24:
+            try:
+                _parse_compact_telemetry(bytes.fromhex(bak24), state)
+            except (ValueError, TypeError):
+                _LOGGER.debug("Could not parse cloud Bak24: %s", bak24)
+
+        # Timestamp
+        time_hex = attrs.get("Time")
+        if time_hex:
+            try:
+                _parse_state_notify(bytes.fromhex(time_hex), state)
+            except (ValueError, TypeError):
+                _LOGGER.debug("Could not parse cloud Time: %s", time_hex)
+
+        # Scalar config attributes (if the cloud happens to have them)
+        for attr_name, field_name in (
+            ("Mode", "mode"),
+            ("Time_Feed", "feed_duration"),
+            ("Model_A", "model_a"),
+            ("Model_B", "model_b"),
+            ("Wash", "wash_reminder"),
+        ):
+            val = attrs.get(attr_name)
+            if val is not None:
+                setattr(state, field_name, int(val))
+
+        # Derive is_on from mode
+        state.is_on = state.mode != MODE_OFF
+
+        _LOGGER.debug("Seeded state from cloud: mode=%d is_on=%s", state.mode, state.is_on)
 
     async def _async_update_data(self) -> MaxspectDeviceState:
         if not self.client.connected:

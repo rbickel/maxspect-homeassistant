@@ -34,9 +34,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> 
 
     try:
         await coordinator.async_cloud_login()
-    except GizwitsCloudError as err:
+    except Exception as err:  # noqa: BLE001
         # Cloud login failure is not fatal — LAN sensors still work
         _LOGGER.warning("Cloud login failed (control disabled): %s", err)
+
+    # Seed state from cloud so sensors have values immediately
+    try:
+        await coordinator.async_seed_from_cloud()
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("Cloud seeding failed, will rely on LAN data")
 
     # Seed coordinator.data so entities can be created immediately
     coordinator.async_set_updated_data(coordinator.client.state)

@@ -63,6 +63,7 @@ DP_LENGTHS: dict[int, int] = {
 
 # Polling / heartbeat intervals (seconds)
 POLL_INTERVAL = 3.0
+CONFIG_POLL_INTERVAL = 60.0
 HEARTBEAT_INTERVAL = 20.0
 
 # Discovery

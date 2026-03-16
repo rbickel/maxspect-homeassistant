@@ -58,6 +58,18 @@
       },
       "timestamp": {
         "name": "Device timestamp"
+      },
+      "feed_duration": {
+        "name": "Feed duration"
+      },
+      "model_a": {
+        "name": "Pump A model"
+      },
+      "model_b": {
+        "name": "Pump B model"
+      },
+      "wash_reminder": {
+        "name": "Wash reminder"
       }
     }
   }
