@@ -32,6 +32,7 @@ from .const import (
     GIZWITS_APP_ID,
     GIZWITS_PRODUCT_KEY,
     MODE_OFF,
+    MODE_ON,
 )
 
 _LOGGER = logging.getLogger(__name__)
