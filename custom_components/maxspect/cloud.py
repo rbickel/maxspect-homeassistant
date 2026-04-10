@@ -32,6 +32,14 @@ class GizwitsCloudError(Exception):
     """Error communicating with the Gizwits Cloud API."""
 
 
+class GizwitsCloudAuthError(GizwitsCloudError):
+    """Authentication failure — bad credentials or wrong region."""
+
+
+class GizwitsCloudDeviceNotFoundError(GizwitsCloudError):
+    """Login succeeded but no matching device was found on the account."""
+
+
 class GizwitsCloudClient:
     """Async client for the Gizwits Cloud REST API."""
 
@@ -96,12 +104,38 @@ class GizwitsCloudClient:
         payload = {"username": self._username, "password": self._password}
 
         async with session.post(url, json=payload, headers=self._headers()) as resp:
+            body = await resp.text()
             if resp.status != 200:
-                body = await resp.text()
-                raise GizwitsCloudError(
+                _LOGGER.warning(
+                    "Cloud login failed (HTTP %s) at %s: %s",
+                    resp.status, self._base_url, body,
+                )
+                raise GizwitsCloudAuthError(
                     f"Login failed (HTTP {resp.status}): {body}"
                 )
-            data = await resp.json(content_type=None)
+            try:
+                data = await resp.json(content_type=None)
+            except Exception as err:  # noqa: BLE001
+                raise GizwitsCloudAuthError(
+                    f"Login response not valid JSON: {body}"
+                ) from err
+
+        # Gizwits sometimes returns HTTP 200 with an error_code in the body
+        # instead of a proper 4xx (e.g. error_code=9004 for bad credentials).
+        if "error_code" in data:
+            _LOGGER.warning(
+                "Cloud login rejected by server (error_code=%s): %s",
+                data["error_code"], data.get("detail", "no detail"),
+            )
+            raise GizwitsCloudAuthError(
+                f"Login rejected (error_code={data['error_code']}): "
+                f"{data.get('detail', 'check credentials and region')}"
+            )
+
+        if "token" not in data:
+            raise GizwitsCloudAuthError(
+                f"Login response missing token field: {data}"
+            )
 
         self._token = data["token"]
         self._uid = data.get("uid")
@@ -141,8 +175,15 @@ class GizwitsCloudClient:
                 )
                 return self._did
 
-        raise GizwitsCloudError(
-            f"No device found for product_key {product_key}"
+        _LOGGER.warning(
+            "No device with product_key %s found on account %s (%s). "
+            "Check that the device is bound to this account and that the "
+            "correct region is selected.",
+            product_key, self._username, self._base_url,
+        )
+        raise GizwitsCloudDeviceNotFoundError(
+            f"No device found for product_key {product_key} — "
+            "verify the device is bound to this account and the region is correct"
         )
 
     # -- Device control ------------------------------------------------

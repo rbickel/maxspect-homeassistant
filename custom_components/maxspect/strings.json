@@ -22,6 +22,7 @@
     "error": {
       "cannot_connect": "Failed to connect to the device. Check the IP address and ensure the device is on the same network.",
       "cloud_auth_failed": "Cloud login failed. Check your Syna-G+ Cloud credentials and region.",
+      "cloud_device_not_found": "Login succeeded but no Maxspect device was found on this account. Check that the device is bound to this account in the Syna-G+ app, and that the correct region is selected.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
