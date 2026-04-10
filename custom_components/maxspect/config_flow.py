@@ -12,7 +12,12 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import MaxspectClient, MaxspectConnectionError
-from .cloud import GizwitsCloudClient, GizwitsCloudError
+from .cloud import (
+    GizwitsCloudAuthError,
+    GizwitsCloudClient,
+    GizwitsCloudDeviceNotFoundError,
+    GizwitsCloudError,
+)
 from .const import (
     CONF_CLOUD_DID,
     CONF_CLOUD_PASSWORD,
@@ -97,7 +102,14 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             try:
                 did = await cloud.async_validate(GIZWITS_PRODUCT_KEY)
-            except GizwitsCloudError:
+            except GizwitsCloudDeviceNotFoundError as err:
+                _LOGGER.warning("Cloud device not found: %s", err)
+                errors["base"] = "cloud_device_not_found"
+            except GizwitsCloudAuthError as err:
+                _LOGGER.warning("Cloud auth failed: %s", err)
+                errors["base"] = "cloud_auth_failed"
+            except GizwitsCloudError as err:
+                _LOGGER.warning("Cloud error during validation: %s", err)
                 errors["base"] = "cloud_auth_failed"
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected error during cloud validation")
