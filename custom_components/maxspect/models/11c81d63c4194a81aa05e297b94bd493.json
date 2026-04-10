@@ -1,0 +1,2529 @@
+{
+  "name": "\u5957\u7f38",
+  "packetVersion": "0x00000004",
+  "protocolType": "var_len",
+  "product_key": "11c81d63c4194a81aa05e297b94bd493",
+  "entities": [
+    {
+      "display_name": "\u673a\u667a\u4e91\u5f00\u53d1\u5957\u4ef6",
+      "attrs": [
+        {
+          "display_name": "\u603b\u7535\u5f00\u5173",
+          "name": "Switch_All",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 0,
+          "desc": "0:\u5173    1:\u5f00"
+        },
+        {
+          "display_name": "\u7ae5\u9501\u5f00\u5173",
+          "name": "Switch_Child_Lock",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 1,
+          "desc": "0:\u5173    1:\u5f00"
+        },
+        {
+          "display_name": "\u85fb\u706f\u624b\u52a8\u6a21\u5f0f",
+          "name": "Maunal_Algal_Lamp",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 2,
+          "desc": "0\uff1a\u5173            1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173",
+          "name": "Switch_Buzzer_01",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 3,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173",
+          "name": "Switch_Push_01",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 4,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u6c34\u4f4d\u72b6\u6001",
+          "name": "Level_Water_01",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 5,
+          "desc": "0\uff1a\u6b63\u5e38    1\uff1a\u6536\u96c6\u676f\u5df2\u6ee1"
+        },
+        {
+          "display_name": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Alert_01",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 6,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66    1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u63a2\u5934\u4f4d\u7f6e",
+          "name": "Position_01",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 7,
+          "desc": "0\uff1a\u4e0b            1\uff1a\u4e0a"
+        },
+        {
+          "display_name": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173",
+          "name": "Switch_Buzzer_02",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 8,
+          "desc": "0\uff1a\u5173            1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173",
+          "name": "Switch_Push_02",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 9,
+          "desc": "0\uff1a\u5173            1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u6c34\u4f4d\u72b6\u6001",
+          "name": "Level_Water_02",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 10,
+          "desc": "0\uff1a\u6b63\u5e38     1\uff1a\u6f0f\u6c34"
+        },
+        {
+          "display_name": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Alert_02",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 11,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66     1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u63a2\u5934\u4f4d\u7f6e",
+          "name": "Position_02",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 12,
+          "desc": "0\uff1a\u4e0b             1\uff1a\u4e0a"
+        },
+        {
+          "display_name": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173",
+          "name": "Switch_Buzzer_03",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 13,
+          "desc": "0\uff1a\u5173              1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u8865\u6c34\u6876\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173",
+          "name": "Switch_Push_03",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 14,
+          "desc": "0\uff1a\u5173              1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u6c34\u4f4d\u72b6\u6001",
+          "name": "Level_Water_03",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 15,
+          "desc": "0\uff1a\u6b63\u5e38       1\uff1a\u7f3a\u6c34"
+        },
+        {
+          "display_name": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Alert_03",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 16,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u63a2\u5934\u4f4d\u7f6e",
+          "name": "Position_03",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 17,
+          "desc": "0\uff1a\u4e0b          1\uff1a\u4e0a"
+        },
+        {
+          "display_name": "\u6f0f\u6c34\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173",
+          "name": "Switch_Buzzer_04",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 18,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u6f0f\u6c34\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173",
+          "name": "Switch_Push_04",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 19,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u6f0f\u6c34\u63a2\u5934\u6c34\u4f4d\u72b6\u6001",
+          "name": "Level_Water_04",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 20,
+          "desc": "0\uff1a\u6b63\u5e38          1\uff1a\u6f0f\u6c34"
+        },
+        {
+          "display_name": "\u6f0f\u6c34\u63a2\u5934\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Alert_04",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 21,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u6e29\u63a7\u51fa\u9519",
+          "name": "Level_Temp_Error_05",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 22,
+          "desc": "0\uff1a\u6b63\u5e38           1\uff1a\u9519\u8bef"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59341\u9ad8\u6e29\u72b6\u6001",
+          "name": "Level_High_051",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 23,
+          "desc": "0\uff1a\u6b63\u5e38           1\uff1a\u5f02\u5e38"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59341\u4f4e\u6e29\u72b6\u6001",
+          "name": "Level_Low_051",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 24,
+          "desc": "0\uff1a\u6b63\u5e38           1\uff1a\u5f02\u5e38"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59342\u9ad8\u6e29\u72b6\u6001",
+          "name": "Level_High_052",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 25,
+          "desc": "0\uff1a\u6b63\u5e38           1\uff1a\u5f02\u5e38"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59342\u4f4e\u6e29\u72b6\u6001",
+          "name": "Level_Low_052",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 26,
+          "desc": "0\uff1a\u6b63\u5e38           1\uff1a\u5f02\u5e38"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173",
+          "name": "Switch_Buzzer_05",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 27,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u6e29\u5ea6\u62a5\u8b66\u5f00\u5173",
+          "name": "Switch_Alert_05",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 28,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173",
+          "name": "Switch_Push_05",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 29,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59341\u9ad8\u6e29\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_High_051",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 30,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59341\u4f4e\u6e29\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Low_051",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 31,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59342\u9ad8\u6e29\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_High_052",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 32,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59342\u4f4e\u6e29\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Low_052",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 33,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u6e29\u63a7\u51fa\u9519\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Temp_Error_05",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 34,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u505c\u6b62\u5582\u98df",
+          "name": "Stop_Feed",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 35,
+          "desc": "0\uff1a\u5173          1\uff1a\u65e0\u542b\u4e49"
+        },
+        {
+          "display_name": "\u6362\u6c34\u5f00\u5173",
+          "name": "Switch_Water_Exchange",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 36,
+          "desc": "0\uff1a\u6362\u6c34\u5173           1\uff1a\u6362\u6c34\u5f00"
+        },
+        {
+          "display_name": "\u6362\u6c34\u62a5\u8b66\u63a8\u9001",
+          "name": "Push_Alert_Water_Exchange",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 37,
+          "desc": "0\uff1a\u4e0d\u62a5\u8b66           1\uff1a\u62a5\u8b66"
+        },
+        {
+          "display_name": "\u6362\u6c34\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173",
+          "name": "Switch_Push_Water_Exchange",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 38,
+          "desc": "0\uff1a\u5173           1\uff1a\u5f00"
+        },
+        {
+          "display_name": "bak1",
+          "name": "bak1",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 39,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak2",
+          "name": "bak2",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 40,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak3",
+          "name": "bak3",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 41,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak4",
+          "name": "bak4",
+          "data_type": "bool",
+          "position": {
+            "byte_offset": 0,
+            "unit": "bit",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "type": "alert",
+          "id": 42,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "\u85fb\u706f\u8fd0\u884c\u6a21\u5f0f",
+          "name": "Mode_Algal_Lamp",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 100,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 43,
+          "desc": "0\uff1a\u624b\u52a8        1\uff1a\u81ea\u52a8"
+        },
+        {
+          "display_name": "\u9020\u6d6a\u8fd0\u884c\u6a21\u5f0f",
+          "name": "Mode_Wave_Pump",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 100,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 44,
+          "desc": "0\uff1a\u624b\u52a8        1\uff1a\u81ea\u52a8"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59341\u6e29\u5ea6",
+          "name": "Temp_051",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 200,
+            "ratio": 0.5,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 45,
+          "desc": "\u5206\u8fa8\u73870.5(\u5bf9\u5e94\u7cbe\u51c6\u5ea60.5\u5ea6)"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u59342\u6e29\u5ea6",
+          "name": "Temp_052",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 200,
+            "ratio": 0.5,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 46,
+          "desc": "\u5206\u8fa8\u73870.5(\u5bf9\u5e94\u7cbe\u51c6\u5ea60.5\u5ea6)"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u9ad8\u6e29\u62a5\u8b66\u503c",
+          "name": "Temp_High_Alert_05",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 200,
+            "ratio": 0.5,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 47,
+          "desc": "\u5206\u8fa8\u73870.5(\u5bf9\u5e94\u7cbe\u51c6\u5ea60.5\u5ea6)"
+        },
+        {
+          "display_name": "\u6e29\u5ea6\u63a2\u5934\u4f4e\u6e29\u62a5\u8b66\u503c",
+          "name": "Temp_Low_Alert_05",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 200,
+            "ratio": 0.5,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 48,
+          "desc": "\u5206\u8fa8\u73870.5(\u5bf9\u5e94\u7cbe\u51c6\u5ea60.5\u5ea6)"
+        },
+        {
+          "display_name": "\u6d4b\u8bd5",
+          "name": "Test",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 49,
+          "desc": "\u6d4b\u8bd5\u4e13\u7528"
+        },
+        {
+          "display_name": "bak5",
+          "name": "bak5",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 50,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak6",
+          "name": "bak6",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 51,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak7",
+          "name": "bak7",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 52,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak8",
+          "name": "bak8",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 53,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak9",
+          "name": "bak9",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 54,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak10",
+          "name": "bak10",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 55,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak11",
+          "name": "bak11",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 56,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak12",
+          "name": "bak12",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 57,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak13",
+          "name": "bak13",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 58,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak14",
+          "name": "bak14",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 59,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak15",
+          "name": "bak15",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 60,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak16",
+          "name": "bak16",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 61,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak17",
+          "name": "bak17",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 62,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak18",
+          "name": "bak18",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 63,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak19",
+          "name": "bak19",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 64,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak20",
+          "name": "bak20",
+          "data_type": "uint8",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 1,
+            "bit_offset": 0
+          },
+          "uint_spec": {
+            "addition": 0,
+            "max": 255,
+            "ratio": 1,
+            "min": 0
+          },
+          "type": "status_writable",
+          "id": 65,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "\u4ea7\u54c1\u5e8f\u5217\u53f7",
+          "name": "Serial_Number",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 12,
+            "bit_offset": 0
+          },
+          "type": "status_readonly",
+          "id": 66,
+          "desc": "\u5e8f\u5217\u53f7 (12\u5b57\u8282)"
+        },
+        {
+          "display_name": "\u8bbe\u5907\u5bc6\u7801",
+          "name": "Password",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 17,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 67,
+          "desc": "\u957f\u5ea6(1\u5b57\u8282\u4e0d\u5305\u542b\u672c\u8eab)+\u5bc6\u7801(0-16\u5b57\u8282)\n\u9ed8\u8ba4\u957f\u5ea6\u4e3a\uff1a0\uff0c\u8868\u793a\u8fd8\u672a\u8bbe\u7f6e\u5bc6\u7801\u3002\u51fa\u5382\u548c\u91cd\u7f6e\u9700\u8981\u8bbe\u7f6e\u957f\u5ea6\u4e3a0"
+        },
+        {
+          "display_name": "\u65e5\u671f\u65f6\u95f4",
+          "name": "Time",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 7,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 68,
+          "desc": "\u6807\u8bc6\u5e74\u6708\u65e5\u65f6\u5206\u79d2\n\u6807\u8bc60--\u5199\u65f6\u95f4   1--\u8bfb\u65f6\u95f4"
+        },
+        {
+          "display_name": "\u85fb\u706f\u81ea\u52a8\u6a21\u5f0f",
+          "name": "Auto_Algal_Lamp",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 4,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 69,
+          "desc": "\u5f00\u706f\u65f6\u95f4+\u5173\u706f\u65f6\u95f4"
+        },
+        {
+          "display_name": "\u4e3b\u6cf5\u6863\u4f4d",
+          "name": "Level_Main_Pump",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 2,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 70,
+          "desc": "\u7b2c\u4e00\u4e2a\u5b57\u8282: 0 \u5173   1\uff1a\u5f00\n\u7b2c\u4e8c\u4e2a\u5b57\u8282\uff1a\u5f00\u7684\u6863\u4f4d1-10"
+        },
+        {
+          "display_name": "\u9020\u6d6a\u624b\u52a8\u6a21\u5f0f",
+          "name": "Maunal_Wave_Pump",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 9,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 71,
+          "desc": "1\u3001\u957f\u5ea6(\u957f\u5ea6\u4e0d\u542b\u81ea\u5df1)+\u5185\u5bb9\n2\u30011+4*2"
+        },
+        {
+          "display_name": "\u9020\u6d6a\u81ea\u52a8\u6a21\u5f0f",
+          "name": "Auto_Wave_Pump",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 68,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 72,
+          "desc": "1\u3001\u957f\u5ea6(\u957f\u5ea6\u4e0d\u542b\u81ea\u5df1)+\u5185\u5bb9\n2\u30011+1+(4*2+3)*6"
+        },
+        {
+          "display_name": "\u9020\u6d6a\u76ee\u89c6",
+          "name": "Display_Wave_Pump",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 9,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 73,
+          "desc": "1\u3001\u957f\u5ea6(\u957f\u5ea6\u4e0d\u542b\u81ea\u5df1)+\u5185\u5bb9"
+        },
+        {
+          "display_name": "\u86cb\u5206\u6863\u4f4d",
+          "name": "Level_Skimmer",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 2,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 74,
+          "desc": "\u7b2c\u4e00\u4e2a\u5b57\u8282: 0 \u5173   1\uff1a\u5f00\n\u7b2c\u4e8c\u4e2a\u5b57\u8282\uff1a\u5f00\u7684\u6863\u4f4d1-10"
+        },
+        {
+          "display_name": "\u624b\u52a8\u5582\u98df",
+          "name": "Manual_Feed",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 12,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 75,
+          "desc": "1\u3001\u957f\u5ea6+\u65f6\u957f+\u86cb\u5206+\u4e0a\u6c34\u6cf5+\u9020\u6d6a\n2\u3001 1+1+1+1+8"
+        },
+        {
+          "display_name": "\u81ea\u52a8\u5582\u98df",
+          "name": "Auto_Feed",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 21,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 76,
+          "desc": "1\u3001\u957f\u5ea6+\u5f00\u5173+\u624b\u52a8\u5582\u98df+\u65f6\u95f4\u70b91(\u65f6+\u5206)+\u65f6\u95f4\u70b92+\u65f6\u95f4\u70b93+\u65f6\u95f4\u70b94\n1+1+11+2*4"
+        },
+        {
+          "display_name": "\u5269\u4f59\u5582\u98df\u65f6\u957f",
+          "name": "Time_Remain_Feed",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 2,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 77,
+          "desc": "\u5206+\u79d2"
+        },
+        {
+          "display_name": "\u6362\u6c34\u65f6\u957f",
+          "name": "Time_Water_Exchange",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 3,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 78,
+          "desc": "\u65f6+\u5206+\u79d2"
+        },
+        {
+          "display_name": "bak21",
+          "name": "bak21",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 10,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 79,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak22",
+          "name": "bak22",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 10,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 80,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak23",
+          "name": "bak23",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 10,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 81,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak24",
+          "name": "bak24",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 50,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 82,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak25",
+          "name": "bak25",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 50,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 83,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak26",
+          "name": "bak26",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 50,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 84,
+          "desc": "\u5907\u7528"
+        },
+        {
+          "display_name": "bak27",
+          "name": "bak27",
+          "data_type": "binary",
+          "position": {
+            "byte_offset": 0,
+            "unit": "byte",
+            "len": 100,
+            "bit_offset": 0
+          },
+          "type": "status_writable",
+          "id": 85,
+          "desc": "\u5907\u7528"
+        }
+      ],
+      "name": "entity0",
+      "id": 0
+    }
+  ],
+  "ui": {
+    "object": {
+      "version": 4,
+      "showEditButton": false
+    },
+    "sections": [
+      {
+        "elements": [
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_All"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_All",
+            "title": "\u603b\u7535\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Child_Lock"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Child_Lock",
+            "title": "\u7ae5\u9501\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Maunal_Algal_Lamp"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Maunal_Algal_Lamp",
+            "title": "\u85fb\u706f\u624b\u52a8\u6a21\u5f0f"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Buzzer_01"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Buzzer_01",
+            "title": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Push_01"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Push_01",
+            "title": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Water_01"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Water_01",
+            "title": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u6c34\u4f4d\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Position_01"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Position_01",
+            "title": "\u86cb\u5206\u6c34\u4f4d\u63a2\u5934\u63a2\u5934\u4f4d\u7f6e"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Buzzer_02"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Buzzer_02",
+            "title": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Push_02"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Push_02",
+            "title": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Water_02"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Water_02",
+            "title": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u6c34\u4f4d\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Position_02"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Position_02",
+            "title": "\u5e95\u7f38\u6c34\u4f4d\u63a2\u5934\u63a2\u5934\u4f4d\u7f6e"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Buzzer_03"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Buzzer_03",
+            "title": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Push_03"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Push_03",
+            "title": "\u8865\u6c34\u6876\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Water_03"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Water_03",
+            "title": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u6c34\u4f4d\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Position_03"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Position_03",
+            "title": "\u8865\u6c34\u6876\u6c34\u4f4d\u63a2\u5934\u63a2\u5934\u4f4d\u7f6e"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Buzzer_04"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Buzzer_04",
+            "title": "\u6f0f\u6c34\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Push_04"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Push_04",
+            "title": "\u6f0f\u6c34\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Water_04"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Water_04",
+            "title": "\u6f0f\u6c34\u63a2\u5934\u6c34\u4f4d\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Temp_Error_05"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Temp_Error_05",
+            "title": "\u6e29\u5ea6\u63a2\u5934\u6e29\u63a7\u51fa\u9519"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_High_051"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_High_051",
+            "title": "\u6e29\u5ea6\u63a2\u59341\u9ad8\u6e29\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Low_051"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Low_051",
+            "title": "\u6e29\u5ea6\u63a2\u59341\u4f4e\u6e29\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_High_052"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_High_052",
+            "title": "\u6e29\u5ea6\u63a2\u59342\u9ad8\u6e29\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Low_052"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Level_Low_052",
+            "title": "\u6e29\u5ea6\u63a2\u59342\u4f4e\u6e29\u72b6\u6001"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Buzzer_05"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Buzzer_05",
+            "title": "\u6e29\u5ea6\u63a2\u5934\u8702\u9e23\u5668\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Alert_05"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Alert_05",
+            "title": "\u6e29\u5ea6\u63a2\u5934\u6e29\u5ea6\u62a5\u8b66\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Push_05"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Push_05",
+            "title": "\u6e29\u5ea6\u63a2\u5934\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Stop_Feed"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Stop_Feed",
+            "title": "\u505c\u6b62\u5582\u98df"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Water_Exchange"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Water_Exchange",
+            "title": "\u6362\u6c34\u5f00\u5173"
+          },
+          {
+            "boolValue": false,
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Switch_Push_Water_Exchange"
+              ],
+              "perm": "W"
+            },
+            "type": "QBooleanElement",
+            "key": "entity0.Switch_Push_Water_Exchange",
+            "title": "\u6362\u6c34\u62a5\u8b66\u77ed\u4fe1\u63a8\u9001\u5f00\u5173"
+          },
+          {
+            "title": "\u85fb\u706f\u8fd0\u884c\u6a21\u5f0f",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Mode_Algal_Lamp"
+              ],
+              "uint_spec": {
+                "max": 100,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Mode_Algal_Lamp",
+            "maximumValue": 100,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "\u9020\u6d6a\u8fd0\u884c\u6a21\u5f0f",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Mode_Wave_Pump"
+              ],
+              "uint_spec": {
+                "max": 100,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Mode_Wave_Pump",
+            "maximumValue": 100,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "\u6e29\u5ea6\u63a2\u59341\u6e29\u5ea6",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Temp_051"
+              ],
+              "uint_spec": {
+                "max": 100,
+                "step": 0.5,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Temp_051",
+            "maximumValue": 100,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "\u6e29\u5ea6\u63a2\u59342\u6e29\u5ea6",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Temp_052"
+              ],
+              "uint_spec": {
+                "max": 100,
+                "step": 0.5,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Temp_052",
+            "maximumValue": 100,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "\u6e29\u5ea6\u63a2\u5934\u9ad8\u6e29\u62a5\u8b66\u503c",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Temp_High_Alert_05"
+              ],
+              "uint_spec": {
+                "max": 100,
+                "step": 0.5,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Temp_High_Alert_05",
+            "maximumValue": 100,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "\u6e29\u5ea6\u63a2\u5934\u4f4e\u6e29\u62a5\u8b66\u503c",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Temp_Low_Alert_05"
+              ],
+              "uint_spec": {
+                "max": 100,
+                "step": 0.5,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Temp_Low_Alert_05",
+            "maximumValue": 100,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "\u6d4b\u8bd5",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Test"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Test",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak5",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak5"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak5",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak6",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak6"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak6",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak7",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak7"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak7",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak8",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak8"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak8",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak9",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak9"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak9",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak10",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak10"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak10",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak11",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak11"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak11",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak12",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak12"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak12",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak13",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak13"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak13",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak14",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak14"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak14",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak15",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak15"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak15",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak16",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak16"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak16",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak17",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak17"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak17",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak18",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak18"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak18",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak19",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak19"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak19",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "title": "bak20",
+            "bind": "floatValue:float",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak20"
+              ],
+              "uint_spec": {
+                "max": 255,
+                "step": 1,
+                "min": 0
+              },
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak20",
+            "maximumValue": 255,
+            "minimumValue": 0,
+            "type": "QFloatElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u4ea7\u54c1\u5e8f\u5217\u53f7",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Serial_Number"
+              ],
+              "perm": "N"
+            },
+            "value": 0,
+            "key": "entity0.Serial_Number",
+            "maxLength": 24,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u8bbe\u5907\u5bc6\u7801",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Password"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Password",
+            "maxLength": 34,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u65e5\u671f\u65f6\u95f4",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Time"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Time",
+            "maxLength": 14,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u85fb\u706f\u81ea\u52a8\u6a21\u5f0f",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Auto_Algal_Lamp"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Auto_Algal_Lamp",
+            "maxLength": 8,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u4e3b\u6cf5\u6863\u4f4d",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Main_Pump"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Level_Main_Pump",
+            "maxLength": 4,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u9020\u6d6a\u624b\u52a8\u6a21\u5f0f",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Maunal_Wave_Pump"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Maunal_Wave_Pump",
+            "maxLength": 18,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u9020\u6d6a\u81ea\u52a8\u6a21\u5f0f",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Auto_Wave_Pump"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Auto_Wave_Pump",
+            "maxLength": 136,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u9020\u6d6a\u76ee\u89c6",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Display_Wave_Pump"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Display_Wave_Pump",
+            "maxLength": 18,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u86cb\u5206\u6863\u4f4d",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Level_Skimmer"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Level_Skimmer",
+            "maxLength": 4,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u624b\u52a8\u5582\u98df",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Manual_Feed"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Manual_Feed",
+            "maxLength": 24,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u81ea\u52a8\u5582\u98df",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Auto_Feed"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Auto_Feed",
+            "maxLength": 42,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u5269\u4f59\u5582\u98df\u65f6\u957f",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Time_Remain_Feed"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Time_Remain_Feed",
+            "maxLength": 4,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "\u6362\u6c34\u65f6\u957f",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.Time_Water_Exchange"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.Time_Water_Exchange",
+            "maxLength": 6,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak21",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak21"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak21",
+            "maxLength": 20,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak22",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak22"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak22",
+            "maxLength": 20,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak23",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak23"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak23",
+            "maxLength": 20,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak24",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak24"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak24",
+            "maxLength": 100,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak25",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak25"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak25",
+            "maxLength": 100,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak26",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak26"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak26",
+            "maxLength": 100,
+            "type": "QMultilineElement"
+          },
+          {
+            "keyboardType": "NumbersAndPunctuation",
+            "title": "bak27",
+            "object": {
+              "action": "entity0",
+              "bind": [
+                "entity0.bak27"
+              ],
+              "perm": "W"
+            },
+            "value": 0,
+            "key": "entity0.bak27",
+            "maxLength": 200,
+            "type": "QMultilineElement"
+          }
+        ]
+      }
+    ]
+  }
+}

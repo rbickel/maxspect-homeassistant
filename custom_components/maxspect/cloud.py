@@ -150,9 +150,11 @@ class GizwitsCloudClient:
     # -- Device discovery ----------------------------------------------
 
     async def async_discover_device(self, product_key: str) -> str:
-        """Find the first online device matching the product key.
+        """Find the first device matching the product key, or any bound device.
 
         Returns the device DID and stores it for subsequent calls.
+        Falls back to the first bound device if no exact product_key match is
+        found, logging the actual product key to aid support for new models.
         """
         await self._ensure_token()
         session = self._get_session()
@@ -166,7 +168,8 @@ class GizwitsCloudClient:
                 )
             data = await resp.json(content_type=None)
 
-        for dev in data.get("devices", []):
+        devices = data.get("devices", [])
+        for dev in devices:
             if dev.get("product_key") == product_key:
                 self._did = dev["did"]
                 _LOGGER.debug(
@@ -175,14 +178,28 @@ class GizwitsCloudClient:
                 )
                 return self._did
 
+        # No exact product_key match — fall back to the first bound device.
+        # This supports models (e.g. L165) whose product_key is not yet known.
+        if devices:
+            dev = devices[0]
+            self._did = dev["did"]
+            _LOGGER.warning(
+                "No device with known product_key %s found on account %s (%s). "
+                "Falling back to first bound device: did=%s product_key=%s. "
+                "Please report this product_key so it can be added to the integration.",
+                product_key, self._username, self._base_url,
+                self._did, dev.get("product_key"),
+            )
+            return self._did
+
         _LOGGER.warning(
-            "No device with product_key %s found on account %s (%s). "
+            "No devices found on account %s (%s). "
             "Check that the device is bound to this account and that the "
             "correct region is selected.",
-            product_key, self._username, self._base_url,
+            self._username, self._base_url,
         )
         raise GizwitsCloudDeviceNotFoundError(
-            f"No device found for product_key {product_key} — "
+            "No devices found on this account — "
             "verify the device is bound to this account and the region is correct"
         )
 
