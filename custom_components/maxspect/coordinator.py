@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
@@ -31,9 +32,16 @@ from .const import (
     GIZWITS_APP_ID,
     GIZWITS_PRODUCT_KEY,
     MODE_OFF,
+    MODE_ON,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Seconds to suppress stale LAN push notifications after a cloud write.
+# The device takes 1-5 s to receive and process cloud commands; old
+# compact-telemetry pushes arriving in that window would otherwise flip
+# is_on back to the pre-write value.
+_WRITE_COOLDOWN = 8.0
 
 
 class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
@@ -55,6 +63,12 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         )
         self.client.set_update_callback(self._on_device_push)
 
+        # Monotonic deadline below which stale LAN pushes are suppressed.
+        self._write_lock_until: float = 0.0
+        # The mode value written by the last cloud command (used to reapply
+        # the optimistic state when a stale LAN push arrives during cooldown).
+        self._pending_mode: int = MODE_ON
+
         # Cloud client for write operations (may be None for legacy entries)
         self.cloud: GizwitsCloudClient | None = None
         self._cloud_did: str = entry.data.get(CONF_CLOUD_DID, "")
@@ -68,6 +82,25 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             )
 
     def _on_device_push(self) -> None:
+        if time.monotonic() < self._write_lock_until:
+            state = self.client.state
+            if state.mode == self._pending_mode:
+                # Device confirmed our write via LAN — lift cooldown early.
+                _LOGGER.debug(
+                    "Device confirmed mode=%d via LAN, lifting write cooldown",
+                    self._pending_mode,
+                )
+                self._write_lock_until = 0.0
+            else:
+                # Stale push — re-apply the pending state so the shared state
+                # object stays consistent with the optimistic update.
+                _LOGGER.debug(
+                    "Suppressing stale LAN push (mode=%d), reapplying pending mode=%d",
+                    state.mode, self._pending_mode,
+                )
+                state.mode = self._pending_mode
+                state.is_on = self._pending_mode != MODE_OFF
+                return
         self.async_set_updated_data(self.client.state)
 
     async def async_cloud_login(self) -> None:
@@ -93,7 +126,11 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             _LOGGER.error("Cloud control failed: %s", err)
             raise
 
-        # Optimistic state update
+        # Suppress stale LAN pushes until the device confirms the new mode.
+        self._pending_mode = mode
+        self._write_lock_until = time.monotonic() + _WRITE_COOLDOWN
+
+        # Optimistic state update so the UI reflects the change immediately.
         state = self.client.state
         state.mode = mode
         state.is_on = mode != MODE_OFF

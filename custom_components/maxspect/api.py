@@ -455,8 +455,8 @@ class MaxspectClient:
             # DP 34 (Time) only = state notify (power + timestamp)
             _parse_state_notify(data, self._state)
             _LOGGER.debug(
-                "State notify from %s: power=%s ts=%s",
-                self._host, self._state.is_on, self._state.timestamp,
+                "State notify from %s: hw_power=%s ts=%s",
+                self._host, bool(data[0] & 1) if data else None, self._state.timestamp,
             )
             updated = True
         elif _dp_is_flagged(flags, 18):
