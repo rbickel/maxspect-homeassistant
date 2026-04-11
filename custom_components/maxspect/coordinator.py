@@ -30,7 +30,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     GIZWITS_APP_ID,
-    GIZWITS_PRODUCT_KEY,
+    GIZWITS_KNOWN_PRODUCT_KEYS,
     MODE_OFF,
     MODE_ON,
 )
@@ -110,7 +110,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         await self.cloud.async_login()
         if not self._cloud_did:
             self._cloud_did = await self.cloud.async_discover_device(
-                GIZWITS_PRODUCT_KEY
+                known_keys=GIZWITS_KNOWN_PRODUCT_KEYS
             )
         else:
             # Store the known DID so control works without discovery

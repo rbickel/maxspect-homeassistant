@@ -11,9 +11,18 @@ CONF_CLOUD_PASSWORD = "cloud_password"
 CONF_CLOUD_REGION = "cloud_region"
 CONF_CLOUD_DID = "cloud_did"
 
-# Maxspect "漩影WiFi" (Cool Shadow) Gizwits application
+# Maxspect Gizwits application
 GIZWITS_APP_ID = "b59fcef4de7a4d2ab7f4c26eb81a0537"
-GIZWITS_PRODUCT_KEY = "cd01d1f3ab2647ea9da51e045cf53d61"
+# Known product keys for Maxspect devices (Gizwits cloud)
+GIZWITS_PRODUCT_KEY = "cd01d1f3ab2647ea9da51e045cf53d61"  # XF330CE Gyre pump (漩影WiFi)
+GIZWITS_KNOWN_PRODUCT_KEYS: frozenset[str] = frozenset({
+    "cd01d1f3ab2647ea9da51e045cf53d61",  # XF330CE Gyre pump (漩影WiFi)
+    "401dff8180744f02b071f476edf6363b",  # wifi灯 LED light (L165 series)
+    "5dc78a56545d49259d294dbddcd948ec",  # MJ_L265_L290 LED light (L260/L265/L290)
+    "53a6a71bb6164ee1a0c230b01d20c03e",  # E8 LED light
+    "254085a8db274ffaa4add3be7f8f2af6",  # 20缸 aquarium controller
+    "11c81d63c4194a81aa05e297b94bd493",  # 套缸 integrated aquarium system
+})
 DEFAULT_CLOUD_REGION = "eu"
 
 # Gizwits LAN frame header
