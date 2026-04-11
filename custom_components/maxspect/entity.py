@@ -17,11 +17,12 @@ class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
     def __init__(self, coordinator: MaxspectCoordinator) -> None:
         super().__init__(coordinator)
         host = coordinator.client.host
+        device_id = coordinator.config_entry.unique_id or host
         pk = coordinator.config_entry.data.get(CONF_CLOUD_PRODUCT_KEY, "")
         model = PRODUCT_KEY_TO_MODEL_NAME.get(pk, "Gyre XF330CE")
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, host)},
-            name=f"Maxspect {host}",
+            identifiers={(DOMAIN, device_id)},
+            name=f"Maxspect {device_id}",
             manufacturer="Maxspect",
             model=model,
         )
