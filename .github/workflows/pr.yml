@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
 permissions:
   contents: write
@@ -13,7 +13,9 @@ jobs:
   test:
     name: Run unit tests
     runs-on: ubuntu-latest
-    # Always runs — draft and ready PRs alike
+    # Always runs on code changes; also runs when the release label is applied
+    # (to confirm tests pass on the current commit before publishing)
+    if: github.event.action != 'labeled' || github.event.label.name == 'release'
 
     steps:
       - name: Checkout
@@ -35,8 +37,12 @@ jobs:
   auto-bump-version:
     name: Auto-bump patch version if needed
     runs-on: ubuntu-latest
-    # Only on ready (non-draft) PRs, and skip bot commits to avoid re-trigger loop
-    if: github.event.pull_request.draft == false && github.actor != 'github-actions[bot]'
+    # Only when the 'release' label is applied to a ready (non-draft) PR
+    if: >
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'release' &&
+      github.event.pull_request.draft == false &&
+      github.actor != 'github-actions[bot]'
     outputs:
       version: ${{ steps.version.outputs.version }}
       sha: ${{ steps.version.outputs.sha }}
@@ -102,7 +108,7 @@ jobs:
     name: Publish beta prerelease
     runs-on: ubuntu-latest
     needs: [auto-bump-version, test]
-    # Implicitly skipped for draft PRs because auto-bump-version is skipped
+    # Implicitly skipped unless auto-bump-version ran (i.e. 'release' label was applied)
 
     steps:
       - name: Checkout
