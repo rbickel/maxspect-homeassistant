@@ -85,7 +85,10 @@ jobs:
         id: version
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('custom_components/maxspect/manifest.json'))['version'])")
-          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          # Strip leading v and any pre-release suffix (e.g. 0.3.7-beta -> 0.3.7)
+          VERSION="${VERSION#v}"
+          VERSION="${VERSION%%-*}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Determine next beta tag
         id: beta_tag
