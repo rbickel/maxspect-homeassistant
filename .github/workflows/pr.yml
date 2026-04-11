@@ -31,8 +31,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/maxspect/manifest.json'))['version'])")
-          LATEST_TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 \
-            --exclude-pre-releases --json tagName --jq '.[0].tagName // ""')
+          LATEST_TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 --exclude-pre-releases --json tagName --jq '.[0].tagName // ""')
 
           if [ -z "$LATEST_TAG" ]; then
             echo "No stable release found. Using manifest version $MANIFEST_VERSION."
@@ -42,42 +41,34 @@ jobs:
 
           LATEST_VERSION="${LATEST_TAG#v}"
 
-          NEW_VERSION=$(python3 - <<EOF
-from packaging.version import Version
+          # Strip any pre-release suffix (e.g. 0.3.7-beta -> 0.3.7)
+          M="${MANIFEST_VERSION%%-*}"
+          L="${LATEST_VERSION%%-*}"
 
-def clean(v):
-    return v.strip().lstrip("v").split("-")[0]
+          IFS='.' read -r M_MAJ M_MIN M_PAT <<< "$M"
+          IFS='.' read -r L_MAJ L_MIN L_PAT <<< "$L"
 
-manifest = Version(clean("$MANIFEST_VERSION"))
-latest   = Version(clean("$LATEST_VERSION"))
+          NEEDS_BUMP=false
+          if [ "$M_MAJ" -lt "$L_MAJ" ]; then
+            NEEDS_BUMP=true
+          elif [ "$M_MAJ" -eq "$L_MAJ" ] && [ "$M_MIN" -lt "$L_MIN" ]; then
+            NEEDS_BUMP=true
+          elif [ "$M_MAJ" -eq "$L_MAJ" ] && [ "$M_MIN" -eq "$L_MIN" ] && [ "$M_PAT" -le "$L_PAT" ]; then
+            NEEDS_BUMP=true
+          fi
 
-if manifest <= latest:
-    bumped = Version(f"{latest.major}.{latest.minor}.{latest.micro + 1}")
-    print(bumped)
-else:
-    print(manifest)
-EOF
-)
-
-          if [ "$NEW_VERSION" != "$MANIFEST_VERSION" ]; then
-            echo "Bumping version: $MANIFEST_VERSION → $NEW_VERSION"
-            python3 -c "
-import json
-with open('custom_components/maxspect/manifest.json', 'r+') as f:
-    data = json.load(f)
-    data['version'] = '$NEW_VERSION'
-    f.seek(0)
-    json.dump(data, f, indent=2)
-    f.write('\n')
-    f.truncate()
-"
+          if [ "$NEEDS_BUMP" = "true" ]; then
+            NEW_VERSION="${L_MAJ}.${L_MIN}.$((L_PAT + 1))"
+            echo "Bumping version: $MANIFEST_VERSION -> $NEW_VERSION"
+            python3 -c "import json; f=open('custom_components/maxspect/manifest.json','r+'); d=json.load(f); d['version']='$NEW_VERSION'; f.seek(0); json.dump(d,f,indent=2); f.write('\n'); f.truncate()"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add custom_components/maxspect/manifest.json
             git commit -m "chore: auto-bump version to $NEW_VERSION [skip ci]"
             git push
           else
-            echo "Version $MANIFEST_VERSION is already ahead of $LATEST_VERSION. No bump needed."
+            NEW_VERSION="$M"
+            echo "Version $M is already ahead of $L. No bump needed."
           fi
 
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
