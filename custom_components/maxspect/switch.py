@@ -47,8 +47,13 @@ class MaxspectPowerSwitch(MaxspectEntity, SwitchEntity):
 
     def __init__(self, coordinator: MaxspectCoordinator) -> None:
         super().__init__(coordinator)
+        config_unique_id = getattr(coordinator.config_entry, "unique_id", None)
         host = coordinator.client.host
-        self._attr_unique_id = f"{host}_power"
+        port = getattr(coordinator.client, "port", None)
+        unique_base = config_unique_id or (
+            f"{host}:{port}" if port is not None else host
+        )
+        self._attr_unique_id = f"{unique_base}_power"
         self._attr_translation_key = _TRANSLATION_KEY_BY_DEVICE_TYPE.get(
             coordinator.device_type, "pump_power"
         )
