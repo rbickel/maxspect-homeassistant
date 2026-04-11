@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    name: Create release
+    name: Create stable release
     runs-on: ubuntu-latest
 
     steps:
@@ -31,14 +31,14 @@ jobs:
 
       - name: Create zip archive
         if: steps.tag_check.outputs.exists == 'false'
-        run: |
-          zip -r maxspect.zip custom_components/maxspect/
+        run: zip -r maxspect.zip custom_components/maxspect/
 
-      - name: Create GitHub release
+      - name: Create stable release
         if: steps.tag_check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
+          prerelease: false
           generate_release_notes: true
           files: maxspect.zip
