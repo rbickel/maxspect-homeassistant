@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -11,15 +13,30 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfElectricPotential,
     UnitOfPower,
+    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MaxspectConfigEntry
-from .const import MODE_NAMES
-from .entity import MaxspectEntity
+from .const import (
+    AQUARIUM_20_MODE_NAMES,
+    DEVICE_TYPE_AQUARIUM_20,
+    DEVICE_TYPE_AQUARIUM_SYS,
+    DEVICE_TYPE_GYRE,
+    DEVICE_TYPE_LED_6CH,
+    DEVICE_TYPE_LED_8CH,
+    DEVICE_TYPE_LED_E8,
+    LED_6CH_MODE_NAMES,
+    LED_8CH_MODE_NAMES,
+    LED_CHANNEL_COUNT,
+    MODE_NAMES,
+)
 from .coordinator import MaxspectCoordinator
+from .entity import MaxspectEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -29,9 +46,29 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     host = coordinator.client.host
+    dt = coordinator.device_type
 
-    entities: list[SensorEntity] = [
-        MaxspectModeSensor(coordinator, host),
+    if dt == DEVICE_TYPE_GYRE:
+        entities: list[SensorEntity] = _gyre_sensors(coordinator, host)
+    elif dt in (DEVICE_TYPE_LED_6CH, DEVICE_TYPE_LED_8CH, DEVICE_TYPE_LED_E8):
+        entities = _led_sensors(coordinator, host, dt)
+    elif dt == DEVICE_TYPE_AQUARIUM_20:
+        entities = _aquarium_20_sensors(coordinator, host)
+    elif dt == DEVICE_TYPE_AQUARIUM_SYS:
+        entities = _aquarium_sys_sensors(coordinator, host)
+    else:
+        entities = _gyre_sensors(coordinator, host)
+
+    async_add_entities(entities)
+
+
+# ---------------------------------------------------------------------------
+# Sensor factories per device type
+# ---------------------------------------------------------------------------
+
+def _gyre_sensors(coordinator: MaxspectCoordinator, host: str) -> list[SensorEntity]:
+    return [
+        MaxspectModeSensor(coordinator, host, MODE_NAMES),
         MaxspectRPMSensor(coordinator, host, 1),
         MaxspectRPMSensor(coordinator, host, 2),
         MaxspectVoltageSensor(coordinator, host, 1),
@@ -44,25 +81,153 @@ async def async_setup_entry(
         MaxspectModelSensor(coordinator, host, "b"),
         MaxspectWashReminderSensor(coordinator, host),
     ]
-    async_add_entities(entities)
 
+
+def _led_sensors(
+    coordinator: MaxspectCoordinator, host: str, device_type: str
+) -> list[SensorEntity]:
+    mode_names = LED_6CH_MODE_NAMES if device_type == DEVICE_TYPE_LED_6CH else LED_8CH_MODE_NAMES
+    n_channels = LED_CHANNEL_COUNT[device_type]
+    sensors: list[SensorEntity] = [MaxspectModeSensor(coordinator, host, mode_names)]
+    for ch in range(1, n_channels + 1):
+        sensors.append(MaxspectChannelSensor(coordinator, host, ch))
+    return sensors
+
+
+def _aquarium_20_sensors(coordinator: MaxspectCoordinator, host: str) -> list[SensorEntity]:
+    return [
+        MaxspectModeSensor(coordinator, host, AQUARIUM_20_MODE_NAMES),
+        MaxspectGenericTempSensor(coordinator, host, "Temperature1", "temperature_1", is_uint16=True),
+        MaxspectGenericTempSensor(coordinator, host, "Temperature2", "temperature_2", is_uint16=True),
+        MaxspectGenericUint8Sensor(coordinator, host, "Level_Pump", "pump_level"),
+        MaxspectGenericUint8Sensor(coordinator, host, "Level_Skimmer", "skimmer_level"),
+    ]
+
+
+def _aquarium_sys_sensors(coordinator: MaxspectCoordinator, host: str) -> list[SensorEntity]:
+    return [
+        MaxspectGenericTempSensor(coordinator, host, "Temp_051", "temperature_1"),
+        MaxspectGenericTempSensor(coordinator, host, "Temp_052", "temperature_2"),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Sensor entity classes
+# ---------------------------------------------------------------------------
 
 class MaxspectModeSensor(MaxspectEntity, SensorEntity):
-    """Current operational mode."""
+    """Current operational mode — works for all device types."""
 
     _attr_translation_key = "mode"
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
+    def __init__(
+        self,
+        coordinator: MaxspectCoordinator,
+        host: str,
+        mode_names: dict[int, str],
+    ) -> None:
         super().__init__(coordinator)
+        self._mode_names = mode_names
         self._attr_unique_id = f"{host}_mode"
 
     @property
     def native_value(self) -> str:
-        return MODE_NAMES.get(
+        return self._mode_names.get(
             self.coordinator.data.mode,
             f"Unknown ({self.coordinator.data.mode})",
         )
 
+
+class MaxspectChannelSensor(MaxspectEntity, SensorEntity):
+    """LED light channel brightness (0-100 %)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "%"
+
+    def __init__(self, coordinator: MaxspectCoordinator, host: str, channel: int) -> None:
+        super().__init__(coordinator)
+        self._channel = channel
+        self._attr_translation_key = f"channel_{channel}"
+        self._attr_unique_id = f"{host}_channel_{channel}"
+
+    @property
+    def native_value(self) -> int | None:
+        val = self.coordinator.data.generic_attrs.get(f"channel_{self._channel}")
+        if val is None:
+            _LOGGER.debug(
+                "channel_%d not in generic_attrs (keys: %s)",
+                self._channel, list(self.coordinator.data.generic_attrs.keys()),
+            )
+            return None
+        return int(val)
+
+
+class MaxspectGenericTempSensor(MaxspectEntity, SensorEntity):
+    """Temperature sensor seeded from cloud attrs (value / 2.0 = °C)."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    def __init__(
+        self,
+        coordinator: MaxspectCoordinator,
+        host: str,
+        attr: str,
+        translation_key: str,
+        is_uint16: bool = False,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr = attr
+        self._is_uint16 = is_uint16
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{host}_{translation_key}"
+
+    @property
+    def native_value(self) -> float | None:
+        val = self.coordinator.data.generic_attrs.get(self._attr)
+        if val is None:
+            _LOGGER.debug(
+                "%s not in generic_attrs (keys: %s)",
+                self._attr, list(self.coordinator.data.generic_attrs.keys()),
+            )
+            return None
+        return round(int(val) / 2.0, 1)
+
+
+class MaxspectGenericUint8Sensor(MaxspectEntity, SensorEntity):
+    """Generic integer sensor seeded from cloud attrs."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MaxspectCoordinator,
+        host: str,
+        attr: str,
+        translation_key: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr = attr
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{host}_{translation_key}"
+
+    @property
+    def native_value(self) -> int | None:
+        val = self.coordinator.data.generic_attrs.get(self._attr)
+        if val is None:
+            _LOGGER.debug(
+                "%s not in generic_attrs (keys: %s)",
+                self._attr, list(self.coordinator.data.generic_attrs.keys()),
+            )
+            return None
+        return int(val)
+
+
+# ---------------------------------------------------------------------------
+# Gyre-only sensor classes (unchanged)
+# ---------------------------------------------------------------------------
 
 class MaxspectRPMSensor(MaxspectEntity, SensorEntity):
     """Channel RPM sensor."""

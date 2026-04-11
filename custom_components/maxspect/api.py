@@ -21,7 +21,7 @@ import asyncio
 import logging
 import struct
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
@@ -79,6 +79,8 @@ class MaxspectDeviceState:
     model_a: int = 0          # DP 20 Model_A (pump A model code)
     model_b: int = 0          # DP 21 Model_B (pump B model code)
     wash_reminder: int = 0    # DP 22 Wash (wash reminder days)
+    # Cloud-seeded attrs for non-Gyre device types
+    generic_attrs: dict = field(default_factory=dict)
 
     @property
     def mode_name(self) -> str:

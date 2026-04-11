@@ -23,16 +23,20 @@ from .cloud import GizwitsCloudClient, GizwitsCloudError
 from .const import (
     CONF_CLOUD_DID,
     CONF_CLOUD_PASSWORD,
+    CONF_CLOUD_PRODUCT_KEY,
     CONF_CLOUD_REGION,
     CONF_CLOUD_USERNAME,
     DEFAULT_CLOUD_REGION,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
+    DEVICE_CONTROL,
+    DEVICE_TYPE_GYRE,
     DOMAIN,
     GIZWITS_APP_ID,
     GIZWITS_KNOWN_PRODUCT_KEYS,
     MODE_OFF,
     MODE_ON,
+    PRODUCT_KEY_TO_DEVICE_TYPE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -81,7 +85,20 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 session=async_get_clientsession(hass),
             )
 
+    @property
+    def device_type(self) -> str:
+        """Return the device type derived from the stored product key."""
+        pk = self.config_entry.data.get(CONF_CLOUD_PRODUCT_KEY, "")
+        return PRODUCT_KEY_TO_DEVICE_TYPE.get(pk, DEVICE_TYPE_GYRE)
+
     def _on_device_push(self) -> None:
+        if self.device_type != DEVICE_TYPE_GYRE:
+            # LAN telemetry parsing is Gyre-specific; non-Gyre state comes
+            # from cloud seeding only — ignore raw LAN pushes.
+            _LOGGER.debug(
+                "Ignoring LAN push for non-Gyre device type=%s", self.device_type
+            )
+            return
         if time.monotonic() < self._write_lock_until:
             state = self.client.state
             if state.mode == self._pending_mode:
@@ -148,42 +165,95 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
         attrs = data.get("attr", {})
         if not attrs:
+            _LOGGER.warning(
+                "Cloud status for did=%s returned empty attr dict — "
+                "device may be offline or not reporting data",
+                self._cloud_did,
+            )
             return
 
         state = self.client.state
 
-        # Compact telemetry (mode, RPM, voltage, power)
-        bak24 = attrs.get("Bak24")
-        if bak24:
-            try:
-                _parse_compact_telemetry(bytes.fromhex(bak24), state)
-            except (ValueError, TypeError):
-                _LOGGER.debug("Could not parse cloud Bak24: %s", bak24)
+        if self.device_type == DEVICE_TYPE_GYRE:
+            # Compact telemetry (mode, RPM, voltage, power)
+            bak24 = attrs.get("Bak24")
+            if bak24:
+                try:
+                    _parse_compact_telemetry(bytes.fromhex(bak24), state)
+                except (ValueError, TypeError):
+                    _LOGGER.debug("Could not parse cloud Bak24: %s", bak24)
 
-        # Timestamp
-        time_hex = attrs.get("Time")
-        if time_hex:
-            try:
-                _parse_state_notify(bytes.fromhex(time_hex), state)
-            except (ValueError, TypeError):
-                _LOGGER.debug("Could not parse cloud Time: %s", time_hex)
+            # Timestamp
+            time_hex = attrs.get("Time")
+            if time_hex:
+                try:
+                    _parse_state_notify(bytes.fromhex(time_hex), state)
+                except (ValueError, TypeError):
+                    _LOGGER.debug("Could not parse cloud Time: %s", time_hex)
 
-        # Scalar config attributes (if the cloud happens to have them)
-        for attr_name, field_name in (
-            ("Mode", "mode"),
-            ("Time_Feed", "feed_duration"),
-            ("Model_A", "model_a"),
-            ("Model_B", "model_b"),
-            ("Wash", "wash_reminder"),
-        ):
-            val = attrs.get(attr_name)
+            # Scalar config attributes
+            for attr_name, field_name in (
+                ("Mode", "mode"),
+                ("Time_Feed", "feed_duration"),
+                ("Model_A", "model_a"),
+                ("Model_B", "model_b"),
+                ("Wash", "wash_reminder"),
+            ):
+                val = attrs.get(attr_name)
+                if val is not None:
+                    setattr(state, field_name, int(val))
+
+            state.is_on = state.mode != MODE_OFF
+            _LOGGER.debug("Seeded Gyre state from cloud: mode=%d is_on=%s", state.mode, state.is_on)
+        else:
+            # Non-Gyre devices: store all cloud attrs and derive is_on/mode
+            ctrl = DEVICE_CONTROL.get(self.device_type, {})
+            mode_attr = ctrl.get("attr", "Mode")
+            off_val = ctrl.get("off", 1)
+            _LOGGER.debug(
+                "Cloud seed for %s (did=%s): received %d attrs: %s",
+                self.device_type, self._cloud_did, len(attrs), attrs,
+            )
+            state.generic_attrs = dict(attrs)
+            val = attrs.get(mode_attr)
             if val is not None:
-                setattr(state, field_name, int(val))
+                state.is_on = int(val) != off_val
+                state.mode = int(val)
+            _LOGGER.debug(
+                "Seeded %s state from cloud: %s=%s is_on=%s generic_attrs keys=%s",
+                self.device_type, mode_attr, val, state.is_on,
+                list(state.generic_attrs.keys()),
+            )
 
-        # Derive is_on from mode
-        state.is_on = state.mode != MODE_OFF
+        self.async_set_updated_data(state)
 
-        _LOGGER.debug("Seeded state from cloud: mode=%d is_on=%s", state.mode, state.is_on)
+    async def async_set_power(self, on: bool) -> None:
+        """Turn the device on or off, routing to the correct cloud command."""
+        if self.cloud is None:
+            raise GizwitsCloudError("Cloud credentials not configured")
+        ctrl = DEVICE_CONTROL[self.device_type]
+        val = ctrl["on"] if on else ctrl["off"]
+
+        _LOGGER.debug(
+            "async_set_power: device_type=%s on=%s → attr=%s value=%s did=%s",
+            self.device_type, on, ctrl["attr"], val, self._cloud_did,
+        )
+
+        if self.device_type == DEVICE_TYPE_GYRE:
+            # Gyre uses the cooldown + optimistic LAN path
+            await self.async_set_mode(val)
+            return
+
+        try:
+            await self.cloud.async_set_attr(ctrl["attr"], val, did=self._cloud_did)
+        except GizwitsCloudError as err:
+            _LOGGER.error("Cloud control failed: %s", err)
+            raise
+
+        state = self.client.state
+        state.is_on = on
+        state.generic_attrs[ctrl["attr"]] = val
+        self.async_set_updated_data(state)
 
     async def _async_update_data(self) -> MaxspectDeviceState:
         if not self.client.connected:

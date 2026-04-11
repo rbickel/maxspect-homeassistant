@@ -61,6 +61,7 @@ class GizwitsCloudClient:
         self._token_expiry: float = 0
         self._uid: str | None = None
         self._did: str | None = None
+        self._product_key: str | None = None
 
     @property
     def did(self) -> str | None:
@@ -71,6 +72,11 @@ class GizwitsCloudClient:
     def did(self, value: str) -> None:
         """Set the device ID directly (e.g. from saved config)."""
         self._did = value
+
+    @property
+    def product_key(self) -> str | None:
+        """Return the product key of the discovered device."""
+        return self._product_key
 
     # -- Session management --------------------------------------------
 
@@ -175,12 +181,23 @@ class GizwitsCloudClient:
         devices = data.get("devices", [])
         accepted_keys = known_keys or ({product_key} if product_key else set())
 
+        _LOGGER.debug(
+            "Bound devices on account %s (%s): %s",
+            self._username, self._base_url,
+            [
+                {"did": d.get("did"), "product_key": d.get("product_key"),
+                 "alias": d.get("dev_alias"), "online": d.get("is_online")}
+                for d in devices
+            ],
+        )
+
         for dev in devices:
             if dev.get("product_key") in accepted_keys:
                 self._did = dev["did"]
+                self._product_key = dev.get("product_key")
                 _LOGGER.debug(
                     "Discovered device did=%s product_key=%s (online=%s)",
-                    self._did, dev.get("product_key"), dev.get("is_online"),
+                    self._did, self._product_key, dev.get("is_online"),
                 )
                 return self._did
 
@@ -189,6 +206,7 @@ class GizwitsCloudClient:
         if devices:
             dev = devices[0]
             self._did = dev["did"]
+            self._product_key = dev.get("product_key")
             _LOGGER.warning(
                 "No known Maxspect device found on account %s (%s). "
                 "Falling back to first bound device: did=%s product_key=%s. "
@@ -211,8 +229,8 @@ class GizwitsCloudClient:
 
     # -- Device control ------------------------------------------------
 
-    async def async_set_mode(self, mode: int, did: str | None = None) -> None:
-        """Send a Mode control command to the device."""
+    async def async_set_attr(self, attr: str, value: Any, did: str | None = None) -> None:
+        """Send a single attribute control command to the device."""
         target = did or self._did
         if not target:
             raise GizwitsCloudError("No device ID — call async_discover_device first")
@@ -220,16 +238,29 @@ class GizwitsCloudClient:
         await self._ensure_token()
         session = self._get_session()
         url = f"{self._base_url}/app/control/{target}"
-        payload: dict[str, Any] = {"attrs": {"Mode": mode}}
+        payload: dict[str, Any] = {"attrs": {attr: value}}
 
+        _LOGGER.debug(
+            "Cloud control → did=%s payload=%s", target, payload
+        )
         async with session.post(url, json=payload, headers=self._headers()) as resp:
+            body = await resp.text()
             if resp.status != 200:
-                body = await resp.text()
+                _LOGGER.warning(
+                    "Cloud control failed (HTTP %s) for did=%s payload=%s: %s",
+                    resp.status, target, payload, body,
+                )
                 raise GizwitsCloudError(
                     f"Control failed (HTTP {resp.status}): {body}"
                 )
+            _LOGGER.debug(
+                "Cloud control OK (HTTP %s) did=%s %s=%s",
+                resp.status, target, attr, value,
+            )
 
-        _LOGGER.debug("Cloud control: Mode=%d sent to %s", mode, target)
+    async def async_set_mode(self, mode: int, did: str | None = None) -> None:
+        """Send a Mode control command to the device (Gyre devices)."""
+        await self.async_set_attr("Mode", mode, did)
 
     async def async_get_device_status(
         self, did: str | None = None,
@@ -249,7 +280,13 @@ class GizwitsCloudClient:
                 raise GizwitsCloudError(
                     f"Status request failed (HTTP {resp.status}): {body}"
                 )
-            return await resp.json(content_type=None)
+            data = await resp.json(content_type=None)
+
+        _LOGGER.debug(
+            "Cloud status for did=%s: attr=%s",
+            target, data.get("attr"),
+        )
+        return data
 
     async def async_validate(
         self,

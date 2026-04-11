@@ -21,6 +21,7 @@ from .cloud import (
 from .const import (
     CONF_CLOUD_DID,
     CONF_CLOUD_PASSWORD,
+    CONF_CLOUD_PRODUCT_KEY,
     CONF_CLOUD_REGION,
     CONF_CLOUD_USERNAME,
     DEFAULT_CLOUD_REGION,
@@ -119,6 +120,7 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                     **self._lan_data,
                     **user_input,
                     CONF_CLOUD_DID: did,
+                    CONF_CLOUD_PRODUCT_KEY: cloud.product_key or "",
                 }
                 host = self._lan_data[CONF_HOST]
                 port = self._lan_data.get(CONF_PORT, DEFAULT_PORT)

@@ -25,6 +25,57 @@ GIZWITS_KNOWN_PRODUCT_KEYS: frozenset[str] = frozenset({
 })
 DEFAULT_CLOUD_REGION = "eu"
 
+# Config entry key for the discovered device product_key
+CONF_CLOUD_PRODUCT_KEY = "cloud_product_key"
+
+# Device type identifiers
+DEVICE_TYPE_GYRE         = "gyre"          # cd01d1f3… XF330CE pump
+DEVICE_TYPE_LED_6CH      = "led_6ch"       # 401dff81… wifi灯 / L165 (6 ch)
+DEVICE_TYPE_LED_8CH      = "led_8ch"       # 5dc78a56… MJ_L265_L290 (8 ch)
+DEVICE_TYPE_LED_E8       = "led_e8"        # 53a6a71b… E8 (8 ch)
+DEVICE_TYPE_AQUARIUM_20  = "aquarium_20"   # 254085a8… 20缸
+DEVICE_TYPE_AQUARIUM_SYS = "aquarium_sys"  # 11c81d63… 套缸
+
+PRODUCT_KEY_TO_DEVICE_TYPE: dict[str, str] = {
+    "cd01d1f3ab2647ea9da51e045cf53d61": DEVICE_TYPE_GYRE,
+    "401dff8180744f02b071f476edf6363b": DEVICE_TYPE_LED_6CH,
+    "5dc78a56545d49259d294dbddcd948ec": DEVICE_TYPE_LED_8CH,
+    "53a6a71bb6164ee1a0c230b01d20c03e": DEVICE_TYPE_LED_E8,
+    "254085a8db274ffaa4add3be7f8f2af6": DEVICE_TYPE_AQUARIUM_20,
+    "11c81d63c4194a81aa05e297b94bd493": DEVICE_TYPE_AQUARIUM_SYS,
+}
+
+PRODUCT_KEY_TO_MODEL_NAME: dict[str, str] = {
+    "cd01d1f3ab2647ea9da51e045cf53d61": "Gyre XF330CE",
+    "401dff8180744f02b071f476edf6363b": "LED L165 (wifi灯)",
+    "5dc78a56545d49259d294dbddcd948ec": "LED MJ-L265/L290",
+    "53a6a71bb6164ee1a0c230b01d20c03e": "LED E8",
+    "254085a8db274ffaa4add3be7f8f2af6": "Aquarium 20缸",
+    "11c81d63c4194a81aa05e297b94bd493": "Aquarium 套缸",
+}
+
+# Per-device-type cloud control: attr name, on value, off value
+DEVICE_CONTROL: dict[str, dict] = {
+    DEVICE_TYPE_GYRE:         {"attr": "Mode",       "on": 5, "off": 3},
+    DEVICE_TYPE_LED_6CH:      {"attr": "mode",       "on": 0, "off": 3},
+    DEVICE_TYPE_LED_8CH:      {"attr": "MODE",       "on": 0, "off": 2},
+    DEVICE_TYPE_LED_E8:       {"attr": "MODE",       "on": 0, "off": 2},
+    DEVICE_TYPE_AQUARIUM_20:  {"attr": "Mode",       "on": 0, "off": 1},
+    DEVICE_TYPE_AQUARIUM_SYS: {"attr": "Switch_All", "on": 1, "off": 0},
+}
+
+# Mode name maps per device type
+LED_6CH_MODE_NAMES:      dict[int, str] = {0: "Manual", 1: "Auto", 2: "Preset", 3: "Off"}
+LED_8CH_MODE_NAMES:      dict[int, str] = {0: "Manual", 1: "Auto", 2: "Off", 3: "Interaction"}
+AQUARIUM_20_MODE_NAMES:  dict[int, str] = {0: "Running", 1: "Standby"}
+
+# Number of light channels per LED device type
+LED_CHANNEL_COUNT: dict[str, int] = {
+    DEVICE_TYPE_LED_6CH: 6,
+    DEVICE_TYPE_LED_8CH: 8,
+    DEVICE_TYPE_LED_E8:  8,
+}
+
 # Gizwits LAN frame header
 FRAME_HEADER = b"\x00\x00\x00\x03"
 
@@ -77,3 +128,19 @@ HEARTBEAT_INTERVAL = 20.0
 
 # Discovery
 DISCOVERY_TIMEOUT = 5.0
+
+CMD_HEARTBEAT_RESP = 0x000D
+CMD_DATA_SEND = 0x0090
+CMD_DATA_RECV = 0x0091
+
+# Data point protocol actions (first byte of 0x0090/0x0091 payload)
+ACTION_READ = 0x11
+ACTION_WRITE = 0x12
+ACTION_WRITE_ACK = 0x13
+ACTION_DEVICE_REPORT = 0x14
+
+# Attr flags length (6 bytes = 48 bits for data points 0-47)
+ATTR_FLAGS_LEN = 6
+
+# Verified Gyre XF330CE operational modes (DP 18)
+MODE_WATER_FLOW = 0   # Manual pump mode
