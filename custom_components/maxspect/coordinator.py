@@ -231,7 +231,17 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         """Turn the device on or off, routing to the correct cloud command."""
         if self.cloud is None:
             raise GizwitsCloudError("Cloud credentials not configured")
-        ctrl = DEVICE_CONTROL[self.device_type]
+
+        ctrl = DEVICE_CONTROL.get(self.device_type)
+        if ctrl is None:
+            _LOGGER.error(
+                "Power control not supported for unknown device_type=%s did=%s",
+                self.device_type,
+                self._cloud_did,
+            )
+            raise GizwitsCloudError(
+                f"Power control not supported for device type: {self.device_type}"
+            )
         val = ctrl["on"] if on else ctrl["off"]
 
         _LOGGER.debug(
