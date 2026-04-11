@@ -25,8 +25,9 @@ GIZWITS_KNOWN_PRODUCT_KEYS: frozenset[str] = frozenset({
 })
 DEFAULT_CLOUD_REGION = "eu"
 
-# Config entry key for the discovered device product_key
+# Config entry keys for the discovered device metadata
 CONF_CLOUD_PRODUCT_KEY = "cloud_product_key"
+CONF_CLOUD_DEVICE_NAME = "cloud_device_name"
 
 # Device type identifiers
 DEVICE_TYPE_GYRE         = "gyre"          # cd01d1f3… XF330CE pump
