@@ -128,19 +128,3 @@ HEARTBEAT_INTERVAL = 20.0
 
 # Discovery
 DISCOVERY_TIMEOUT = 5.0
-
-CMD_HEARTBEAT_RESP = 0x000D
-CMD_DATA_SEND = 0x0090
-CMD_DATA_RECV = 0x0091
-
-# Data point protocol actions (first byte of 0x0090/0x0091 payload)
-ACTION_READ = 0x11
-ACTION_WRITE = 0x12
-ACTION_WRITE_ACK = 0x13
-ACTION_DEVICE_REPORT = 0x14
-
-# Attr flags length (6 bytes = 48 bits for data points 0-47)
-ATTR_FLAGS_LEN = 6
-
-# Verified Gyre XF330CE operational modes (DP 18)
-MODE_WATER_FLOW = 0   # Manual pump mode

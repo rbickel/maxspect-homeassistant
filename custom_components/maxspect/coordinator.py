@@ -252,6 +252,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
         state = self.client.state
         state.is_on = on
+        state.mode = val
         state.generic_attrs[ctrl["attr"]] = val
         self.async_set_updated_data(state)
 
@@ -261,6 +262,10 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 await self.client.async_connect()
             except MaxspectConnectionError as err:
                 raise UpdateFailed(f"Error connecting: {err}") from err
+        if self.device_type != DEVICE_TYPE_GYRE:
+            # Non-Gyre devices ignore LAN pushes, so we must poll the cloud
+            # on each scan interval to keep channel and mode state current.
+            await self.async_seed_from_cloud()
         return self.client.state
 
     async def async_shutdown(self) -> None:
