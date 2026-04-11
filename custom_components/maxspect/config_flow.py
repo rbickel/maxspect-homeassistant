@@ -21,13 +21,14 @@ from .cloud import (
 from .const import (
     CONF_CLOUD_DID,
     CONF_CLOUD_PASSWORD,
+    CONF_CLOUD_PRODUCT_KEY,
     CONF_CLOUD_REGION,
     CONF_CLOUD_USERNAME,
     DEFAULT_CLOUD_REGION,
     DEFAULT_PORT,
     DOMAIN,
     GIZWITS_APP_ID,
-    GIZWITS_PRODUCT_KEY,
+    GIZWITS_KNOWN_PRODUCT_KEYS,
 )
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -101,7 +102,7 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                 session=async_get_clientsession(self.hass),
             )
             try:
-                did = await cloud.async_validate(GIZWITS_PRODUCT_KEY)
+                did = await cloud.async_validate(known_keys=GIZWITS_KNOWN_PRODUCT_KEYS)
             except GizwitsCloudDeviceNotFoundError as err:
                 _LOGGER.warning("Cloud device not found: %s", err)
                 errors["base"] = "cloud_device_not_found"
@@ -119,6 +120,7 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                     **self._lan_data,
                     **user_input,
                     CONF_CLOUD_DID: did,
+                    CONF_CLOUD_PRODUCT_KEY: cloud.product_key or "",
                 }
                 host = self._lan_data[CONF_HOST]
                 port = self._lan_data.get(CONF_PORT, DEFAULT_PORT)

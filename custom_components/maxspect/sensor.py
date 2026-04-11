@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -11,15 +13,30 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfElectricPotential,
     UnitOfPower,
+    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MaxspectConfigEntry
-from .const import MODE_NAMES
-from .entity import MaxspectEntity
+from .const import (
+    AQUARIUM_20_MODE_NAMES,
+    DEVICE_TYPE_AQUARIUM_20,
+    DEVICE_TYPE_AQUARIUM_SYS,
+    DEVICE_TYPE_GYRE,
+    DEVICE_TYPE_LED_6CH,
+    DEVICE_TYPE_LED_8CH,
+    DEVICE_TYPE_LED_E8,
+    LED_6CH_MODE_NAMES,
+    LED_8CH_MODE_NAMES,
+    LED_CHANNEL_COUNT,
+    MODE_NAMES,
+)
 from .coordinator import MaxspectCoordinator
+from .entity import MaxspectEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -28,41 +45,189 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    host = coordinator.client.host
+    unique_base = coordinator.config_entry.unique_id or coordinator.client.host
+    dt = coordinator.device_type
 
-    entities: list[SensorEntity] = [
-        MaxspectModeSensor(coordinator, host),
-        MaxspectRPMSensor(coordinator, host, 1),
-        MaxspectRPMSensor(coordinator, host, 2),
-        MaxspectVoltageSensor(coordinator, host, 1),
-        MaxspectVoltageSensor(coordinator, host, 2),
-        MaxspectPowerSensor(coordinator, host, 1),
-        MaxspectPowerSensor(coordinator, host, 2),
-        MaxspectTimestampSensor(coordinator, host),
-        MaxspectFeedDurationSensor(coordinator, host),
-        MaxspectModelSensor(coordinator, host, "a"),
-        MaxspectModelSensor(coordinator, host, "b"),
-        MaxspectWashReminderSensor(coordinator, host),
-    ]
+    if dt == DEVICE_TYPE_GYRE:
+        entities: list[SensorEntity] = _gyre_sensors(coordinator, unique_base)
+    elif dt in (DEVICE_TYPE_LED_6CH, DEVICE_TYPE_LED_8CH, DEVICE_TYPE_LED_E8):
+        entities = _led_sensors(coordinator, unique_base, dt)
+    elif dt == DEVICE_TYPE_AQUARIUM_20:
+        entities = _aquarium_20_sensors(coordinator, unique_base)
+    elif dt == DEVICE_TYPE_AQUARIUM_SYS:
+        entities = _aquarium_sys_sensors(coordinator, unique_base)
+    else:
+        entities = _gyre_sensors(coordinator, unique_base)
+
     async_add_entities(entities)
 
 
+# ---------------------------------------------------------------------------
+# Sensor factories per device type
+# ---------------------------------------------------------------------------
+
+def _gyre_sensors(coordinator: MaxspectCoordinator, unique_base: str) -> list[SensorEntity]:
+    return [
+        MaxspectModeSensor(coordinator, unique_base, MODE_NAMES),
+        MaxspectRPMSensor(coordinator, unique_base, 1),
+        MaxspectRPMSensor(coordinator, unique_base, 2),
+        MaxspectVoltageSensor(coordinator, unique_base, 1),
+        MaxspectVoltageSensor(coordinator, unique_base, 2),
+        MaxspectPowerSensor(coordinator, unique_base, 1),
+        MaxspectPowerSensor(coordinator, unique_base, 2),
+        MaxspectTimestampSensor(coordinator, unique_base),
+        MaxspectFeedDurationSensor(coordinator, unique_base),
+        MaxspectModelSensor(coordinator, unique_base, "a"),
+        MaxspectModelSensor(coordinator, unique_base, "b"),
+        MaxspectWashReminderSensor(coordinator, unique_base),
+    ]
+
+
+def _led_sensors(
+    coordinator: MaxspectCoordinator, unique_base: str, device_type: str
+) -> list[SensorEntity]:
+    mode_names = LED_6CH_MODE_NAMES if device_type == DEVICE_TYPE_LED_6CH else LED_8CH_MODE_NAMES
+    n_channels = LED_CHANNEL_COUNT[device_type]
+    sensors: list[SensorEntity] = [MaxspectModeSensor(coordinator, unique_base, mode_names)]
+    for ch in range(1, n_channels + 1):
+        sensors.append(MaxspectChannelSensor(coordinator, unique_base, ch))
+    return sensors
+
+
+def _aquarium_20_sensors(coordinator: MaxspectCoordinator, unique_base: str) -> list[SensorEntity]:
+    return [
+        MaxspectModeSensor(coordinator, unique_base, AQUARIUM_20_MODE_NAMES),
+        MaxspectGenericTempSensor(coordinator, unique_base, "Temperature1", "temperature_1", is_uint16=True),
+        MaxspectGenericTempSensor(coordinator, unique_base, "Temperature2", "temperature_2", is_uint16=True),
+        MaxspectGenericUint8Sensor(coordinator, unique_base, "Level_Pump", "pump_level"),
+        MaxspectGenericUint8Sensor(coordinator, unique_base, "Level_Skimmer", "skimmer_level"),
+    ]
+
+
+def _aquarium_sys_sensors(coordinator: MaxspectCoordinator, unique_base: str) -> list[SensorEntity]:
+    return [
+        MaxspectGenericTempSensor(coordinator, unique_base, "Temp_051", "temperature_1"),
+        MaxspectGenericTempSensor(coordinator, unique_base, "Temp_052", "temperature_2"),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Sensor entity classes
+# ---------------------------------------------------------------------------
+
 class MaxspectModeSensor(MaxspectEntity, SensorEntity):
-    """Current operational mode."""
+    """Current operational mode — works for all device types."""
 
     _attr_translation_key = "mode"
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
+    def __init__(
+        self,
+        coordinator: MaxspectCoordinator,
+        unique_base: str,
+        mode_names: dict[int, str],
+    ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{host}_mode"
+        self._mode_names = mode_names
+        self._attr_unique_id = f"{unique_base}_mode"
 
     @property
     def native_value(self) -> str:
-        return MODE_NAMES.get(
+        return self._mode_names.get(
             self.coordinator.data.mode,
             f"Unknown ({self.coordinator.data.mode})",
         )
 
+
+class MaxspectChannelSensor(MaxspectEntity, SensorEntity):
+    """LED light channel brightness (0-100 %)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "%"
+
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: int) -> None:
+        super().__init__(coordinator)
+        self._channel = channel
+        self._attr_translation_key = f"channel_{channel}"
+        self._attr_unique_id = f"{unique_base}_channel_{channel}"
+
+    @property
+    def native_value(self) -> int | None:
+        val = self.coordinator.data.generic_attrs.get(f"channel_{self._channel}")
+        if val is None:
+            _LOGGER.debug(
+                "channel_%d not in generic_attrs (keys: %s)",
+                self._channel, list(self.coordinator.data.generic_attrs.keys()),
+            )
+            return None
+        return int(val)
+
+
+class MaxspectGenericTempSensor(MaxspectEntity, SensorEntity):
+    """Temperature sensor seeded from cloud attrs (value / 2.0 = °C)."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    def __init__(
+        self,
+        coordinator: MaxspectCoordinator,
+        unique_base: str,
+        attr: str,
+        translation_key: str,
+        is_uint16: bool = False,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr = attr
+        self._is_uint16 = is_uint16
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{unique_base}_{translation_key}"
+
+    @property
+    def native_value(self) -> float | None:
+        val = self.coordinator.data.generic_attrs.get(self._attr)
+        if val is None:
+            _LOGGER.debug(
+                "%s not in generic_attrs (keys: %s)",
+                self._attr, list(self.coordinator.data.generic_attrs.keys()),
+            )
+            return None
+        return round(int(val) / 2.0, 1)
+
+
+class MaxspectGenericUint8Sensor(MaxspectEntity, SensorEntity):
+    """Generic integer sensor seeded from cloud attrs."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MaxspectCoordinator,
+        unique_base: str,
+        attr: str,
+        translation_key: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr = attr
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{unique_base}_{translation_key}"
+
+    @property
+    def native_value(self) -> int | None:
+        val = self.coordinator.data.generic_attrs.get(self._attr)
+        if val is None:
+            _LOGGER.debug(
+                "%s not in generic_attrs (keys: %s)",
+                self._attr, list(self.coordinator.data.generic_attrs.keys()),
+            )
+            return None
+        return int(val)
+
+
+# ---------------------------------------------------------------------------
+# Gyre-only sensor classes (unchanged)
+# ---------------------------------------------------------------------------
 
 class MaxspectRPMSensor(MaxspectEntity, SensorEntity):
     """Channel RPM sensor."""
@@ -70,11 +235,11 @@ class MaxspectRPMSensor(MaxspectEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "rpm"
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str, channel: int) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: int) -> None:
         super().__init__(coordinator)
         self._channel = channel
         self._attr_translation_key = f"ch{channel}_rpm"
-        self._attr_unique_id = f"{host}_ch{channel}_rpm"
+        self._attr_unique_id = f"{unique_base}_ch{channel}_rpm"
 
     @property
     def native_value(self) -> int | None:
@@ -89,11 +254,11 @@ class MaxspectVoltageSensor(MaxspectEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str, channel: int) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: int) -> None:
         super().__init__(coordinator)
         self._channel = channel
         self._attr_translation_key = f"ch{channel}_voltage"
-        self._attr_unique_id = f"{host}_ch{channel}_voltage"
+        self._attr_unique_id = f"{unique_base}_ch{channel}_voltage"
 
     @property
     def native_value(self) -> float | None:
@@ -108,11 +273,11 @@ class MaxspectPowerSensor(MaxspectEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfPower.WATT
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str, channel: int) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: int) -> None:
         super().__init__(coordinator)
         self._channel = channel
         self._attr_translation_key = f"ch{channel}_power"
-        self._attr_unique_id = f"{host}_ch{channel}_power"
+        self._attr_unique_id = f"{unique_base}_ch{channel}_power"
 
     @property
     def native_value(self) -> int | None:
@@ -126,9 +291,9 @@ class MaxspectTimestampSensor(MaxspectEntity, SensorEntity):
     _attr_translation_key = "timestamp"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{host}_timestamp"
+        self._attr_unique_id = f"{unique_base}_timestamp"
 
     @property
     def native_value(self) -> str | None:
@@ -143,9 +308,9 @@ class MaxspectFeedDurationSensor(MaxspectEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{host}_feed_duration"
+        self._attr_unique_id = f"{unique_base}_feed_duration"
 
     @property
     def native_value(self) -> int | None:
@@ -158,11 +323,11 @@ class MaxspectModelSensor(MaxspectEntity, SensorEntity):
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str, channel: str) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str, channel: str) -> None:
         super().__init__(coordinator)
         self._channel = channel
         self._attr_translation_key = f"model_{channel}"
-        self._attr_unique_id = f"{host}_model_{channel}"
+        self._attr_unique_id = f"{unique_base}_model_{channel}"
 
     @property
     def native_value(self) -> str | None:
@@ -177,9 +342,9 @@ class MaxspectWashReminderSensor(MaxspectEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfTime.DAYS
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator: MaxspectCoordinator, host: str) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, unique_base: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{host}_wash_reminder"
+        self._attr_unique_id = f"{unique_base}_wash_reminder"
 
     @property
     def native_value(self) -> int | None:

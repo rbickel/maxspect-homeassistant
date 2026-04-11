@@ -61,6 +61,7 @@ class GizwitsCloudClient:
         self._token_expiry: float = 0
         self._uid: str | None = None
         self._did: str | None = None
+        self._product_key: str | None = None
 
     @property
     def did(self) -> str | None:
@@ -71,6 +72,11 @@ class GizwitsCloudClient:
     def did(self, value: str) -> None:
         """Set the device ID directly (e.g. from saved config)."""
         self._did = value
+
+    @property
+    def product_key(self) -> str | None:
+        """Return the product key of the discovered device."""
+        return self._product_key
 
     # -- Session management --------------------------------------------
 
@@ -149,10 +155,16 @@ class GizwitsCloudClient:
 
     # -- Device discovery ----------------------------------------------
 
-    async def async_discover_device(self, product_key: str) -> str:
-        """Find the first online device matching the product key.
+    async def async_discover_device(
+        self,
+        product_key: str | None = None,
+        known_keys: frozenset[str] | None = None,
+    ) -> str:
+        """Find the first device matching any known product key, or any bound device.
 
         Returns the device DID and stores it for subsequent calls.
+        Falls back to the first bound device if no known key matches,
+        logging the actual product key to aid support for new models.
         """
         await self._ensure_token()
         session = self._get_session()
@@ -166,30 +178,59 @@ class GizwitsCloudClient:
                 )
             data = await resp.json(content_type=None)
 
-        for dev in data.get("devices", []):
-            if dev.get("product_key") == product_key:
+        devices = data.get("devices", [])
+        accepted_keys = known_keys or ({product_key} if product_key else set())
+
+        _LOGGER.debug(
+            "Bound devices on account %s (%s): %s",
+            self._username, self._base_url,
+            [
+                {"did": d.get("did"), "product_key": d.get("product_key"),
+                 "alias": d.get("dev_alias"), "online": d.get("is_online")}
+                for d in devices
+            ],
+        )
+
+        for dev in devices:
+            if dev.get("product_key") in accepted_keys:
                 self._did = dev["did"]
+                self._product_key = dev.get("product_key")
                 _LOGGER.debug(
-                    "Discovered device did=%s (online=%s)",
-                    self._did, dev.get("is_online"),
+                    "Discovered device did=%s product_key=%s (online=%s)",
+                    self._did, self._product_key, dev.get("is_online"),
                 )
                 return self._did
 
+        # No known product_key match — fall back to the first bound device.
+        # This handles models whose product_key has not yet been added.
+        if devices:
+            dev = devices[0]
+            self._did = dev["did"]
+            self._product_key = dev.get("product_key")
+            _LOGGER.warning(
+                "No known Maxspect device found on account %s (%s). "
+                "Falling back to first bound device: did=%s product_key=%s. "
+                "Please report this product_key so it can be added to the integration.",
+                self._username, self._base_url,
+                self._did, dev.get("product_key"),
+            )
+            return self._did
+
         _LOGGER.warning(
-            "No device with product_key %s found on account %s (%s). "
+            "No devices found on account %s (%s). "
             "Check that the device is bound to this account and that the "
             "correct region is selected.",
-            product_key, self._username, self._base_url,
+            self._username, self._base_url,
         )
         raise GizwitsCloudDeviceNotFoundError(
-            f"No device found for product_key {product_key} — "
+            "No devices found on this account — "
             "verify the device is bound to this account and the region is correct"
         )
 
     # -- Device control ------------------------------------------------
 
-    async def async_set_mode(self, mode: int, did: str | None = None) -> None:
-        """Send a Mode control command to the device."""
+    async def async_set_attr(self, attr: str, value: Any, did: str | None = None) -> None:
+        """Send a single attribute control command to the device."""
         target = did or self._did
         if not target:
             raise GizwitsCloudError("No device ID — call async_discover_device first")
@@ -197,16 +238,29 @@ class GizwitsCloudClient:
         await self._ensure_token()
         session = self._get_session()
         url = f"{self._base_url}/app/control/{target}"
-        payload: dict[str, Any] = {"attrs": {"Mode": mode}}
+        payload: dict[str, Any] = {"attrs": {attr: value}}
 
+        _LOGGER.debug(
+            "Cloud control → did=%s payload=%s", target, payload
+        )
         async with session.post(url, json=payload, headers=self._headers()) as resp:
+            body = await resp.text()
             if resp.status != 200:
-                body = await resp.text()
+                _LOGGER.warning(
+                    "Cloud control failed (HTTP %s) for did=%s payload=%s: %s",
+                    resp.status, target, payload, body,
+                )
                 raise GizwitsCloudError(
                     f"Control failed (HTTP {resp.status}): {body}"
                 )
+            _LOGGER.debug(
+                "Cloud control OK (HTTP %s) did=%s %s=%s",
+                resp.status, target, attr, value,
+            )
 
-        _LOGGER.debug("Cloud control: Mode=%d sent to %s", mode, target)
+    async def async_set_mode(self, mode: int, did: str | None = None) -> None:
+        """Send a Mode control command to the device (Gyre devices)."""
+        await self.async_set_attr("Mode", mode, did)
 
     async def async_get_device_status(
         self, did: str | None = None,
@@ -226,9 +280,19 @@ class GizwitsCloudClient:
                 raise GizwitsCloudError(
                     f"Status request failed (HTTP {resp.status}): {body}"
                 )
-            return await resp.json(content_type=None)
+            data = await resp.json(content_type=None)
 
-    async def async_validate(self, product_key: str) -> str:
+        _LOGGER.debug(
+            "Cloud status for did=%s: attr=%s",
+            target, data.get("attr"),
+        )
+        return data
+
+    async def async_validate(
+        self,
+        product_key: str | None = None,
+        known_keys: frozenset[str] | None = None,
+    ) -> str:
         """Login, discover device, return DID. Used by config flow."""
         await self.async_login()
-        return await self.async_discover_device(product_key)
+        return await self.async_discover_device(product_key=product_key, known_keys=known_keys)

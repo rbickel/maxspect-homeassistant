@@ -32,11 +32,53 @@
     "switch": {
       "pump_power": {
         "name": "Pump power"
+      },
+      "light_power": {
+        "name": "Light"
+      },
+      "power": {
+        "name": "Power"
       }
     },
     "sensor": {
       "mode": {
         "name": "Mode"
+      },
+      "channel_1": {
+        "name": "Channel 1"
+      },
+      "channel_2": {
+        "name": "Channel 2"
+      },
+      "channel_3": {
+        "name": "Channel 3"
+      },
+      "channel_4": {
+        "name": "Channel 4"
+      },
+      "channel_5": {
+        "name": "Channel 5"
+      },
+      "channel_6": {
+        "name": "Channel 6"
+      },
+      "channel_7": {
+        "name": "Channel 7"
+      },
+      "channel_8": {
+        "name": "Channel 8"
+      },
+      "temperature_1": {
+        "name": "Temperature 1"
+      },
+      "temperature_2": {
+        "name": "Temperature 2"
+      },
+      "pump_level": {
+        "name": "Pump level"
+      },
+      "skimmer_level": {
+        "name": "Skimmer level"
       },
       "ch1_rpm": {
         "name": "Channel 1 RPM"
