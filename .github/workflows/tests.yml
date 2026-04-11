@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pytest pytest-asyncio
+        run: pip install pytest pytest-asyncio homeassistant
 
       - name: Run tests
         run: pytest --tb=short -v
