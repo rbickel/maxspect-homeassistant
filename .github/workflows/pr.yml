@@ -133,9 +133,6 @@ jobs:
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Create zip archive
-        run: zip -r maxspect.zip custom_components/maxspect/
-
       - name: Tag the PR branch commit
         run: |
           git tag "${{ steps.beta_tag.outputs.tag }}" "${{ needs.auto-bump-version.outputs.sha }}"
@@ -148,4 +145,3 @@ jobs:
           name: ${{ steps.beta_tag.outputs.tag }}
           prerelease: true
           generate_release_notes: true
-          files: maxspect.zip
