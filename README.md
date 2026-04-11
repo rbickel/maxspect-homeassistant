@@ -2,25 +2,40 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Local (LAN) control of Maxspect aquarium devices in Home Assistant.
+Local + cloud control of Maxspect aquarium devices in Home Assistant.
+
+## How It Works
+
+Maxspect devices run on the **Gizwits IoT platform**. This integration uses a hybrid approach:
+
+| Capability | Gyre XF330CE | Other devices |
+|------------|-------------|---------------|
+| State monitoring | LAN push (fast, local) | Cloud polling |
+| Commands (on/off, mode) | Cloud API | Cloud API |
+
+**Cloud credentials are required** for all devices — the Gizwits cloud is used for device discovery and sending commands. The Maxspect firmware ignores command writes over LAN for at least the Gyre XF330CE; it is unknown whether other devices accept LAN commands.
 
 ## Features
 
-- **Local control** — communicates directly with devices on your network, no cloud required
-- **Auto-discovery** — enter the device IP and the integration handles the rest
-- **Light control** — on/off and brightness for Maxspect LED fixtures
+- **Cloud + LAN hybrid** — state updates via LAN push where supported; commands via the Gizwits cloud API
+- **Auto-discovery** — provide your Gizwits account credentials and device IP; the integration handles the rest
+- **Pump control** — on/off and mode for Maxspect Gyre pumps
+- **Light control** — on/off and channel brightness for Maxspect LED fixtures
 
 ## Supported Devices
 
-> **Note:** The API endpoints in this integration are placeholders. You will need to reverse-engineer or document the actual Maxspect local protocol and update `api.py` accordingly.
+| Status | Device | Type |
+|--------|--------|------|
+| ✅ Confirmed | Gyre XF330CE | Pump |
+| 🔄 Testing | LED L165 (wifi灯) | Light |
+| ❓ Unknown | LED MJ-L265 / L290 | Light |
+| ❓ Unknown | LED E8 | Light |
+| ❓ Unknown | Aquarium 20 (20缸) | Combo |
+| ❓ Unknown | Aquarium System (套缸) | Combo |
 
-Potential targets:
+**Legend:** ✅ tested and confirmed working — 🔄 testing in progress — ❓ implemented but untested
 
-- Maxspect Ethereal (LED light)
-- Maxspect Jump (LED light)
-- Maxspect RSX / R420R
-- Maxspect Gyre series (pumps — would use a `fan` or `switch` platform)
-- Maxspect MJ series
+If you own a device marked ❓ or 🔄, please try the integration and report your experience in the [issues](../../issues).
 
 ## Installation
 
@@ -41,7 +56,8 @@ Potential targets:
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for "Maxspect"
-3. Enter the IP address (and optionally port) of your device
+3. Enter the **device IP address** (and optionally port)
+4. Enter your **Gizwits / Maxspect app credentials** (username, password, region)
 
 ## Development
 
@@ -50,27 +66,59 @@ Potential targets:
 ```
 custom_components/maxspect/
 ├── __init__.py          # Integration setup / teardown
-├── api.py               # Local HTTP client for device communication
+├── api.py               # Gizwits LAN client (state push receiver)
+├── cloud.py             # Gizwits Cloud REST API client (commands)
 ├── config_flow.py       # UI-based configuration flow
-├── const.py             # Constants (domain, defaults)
-├── coordinator.py       # DataUpdateCoordinator for polling
+├── const.py             # Constants, product key → device type mapping
+├── coordinator.py       # DataUpdateCoordinator (LAN + cloud hybrid)
 ├── entity.py            # Base entity with device info
-├── light.py             # Light platform entity
+├── sensor.py            # Sensor platform
+├── switch.py            # Switch platform (power)
 ├── manifest.json        # Integration metadata
 ├── strings.json         # UI strings (source)
 └── translations/
     └── en.json          # English translations
 ```
 
-### Implementing the Device Protocol
+## Contributing & Adding New Devices
 
-The main work to make this functional is in [api.py](custom_components/maxspect/api.py). You need to:
+**I only own a Gyre XF330CE.** All other device types are implemented based on the decompiled Maxspect app but are untested. I need help from owners of:
 
-1. **Discover the device protocol** — use a packet sniffer (e.g., Wireshark) or the Maxspect app to capture network traffic
-2. **Replace placeholder endpoints** — update the HTTP calls (or switch to raw TCP/UDP) based on the real protocol
-3. **Update data models** — adjust `MaxspectDeviceInfo` and `MaxspectDeviceState` to match actual device responses
-4. **Add platforms** — for pumps, add `fan.py` or `switch.py`; for sensors (temperature, etc.), add `sensor.py`
+- LED L165, MJ-L265/L290, E8
+- Aquarium 20 (20缸) / Aquarium System (套缸)
 
-## License
+If you own one of these devices and are willing to test, your report is invaluable — even a "it works" or "entities don't appear" comment helps.
+
+### How to report a new device
+
+1. **Enable debug logging** in `configuration.yaml`:
+
+   ```yaml
+   logger:
+     default: warning
+     logs:
+       custom_components.maxspect: debug
+   ```
+
+2. Restart Home Assistant and add the integration. In **Settings → System → Logs**, look for your device's product key:
+
+   ```
+   Discovered device did=XXXX product_key=<KEY> (online=True)
+   ```
+
+3. Try turning the device on and off, then collect the full log section.
+
+4. **[Open a New Device Support issue](../../issues/new?template=new_device_support.md)** with:
+   - Your device model and the product key from the logs
+   - The debug log from startup through a control action
+   - Which entities appeared and whether they responded correctly
+
+Browse [existing device reports](../../issues?q=label%3Anew-device) to see if someone is already testing your model.
+
+### Submit a PR
+
+Code fixes and improvements for untested device types are very welcome. The product key → device type mapping lives in [`const.py`](custom_components/maxspect/const.py) and the per-device control logic is in [`coordinator.py`](custom_components/maxspect/coordinator.py).
+
+---
 
 MIT
