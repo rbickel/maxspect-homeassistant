@@ -1,11 +1,13 @@
 {
   "domain": "maxspect",
   "name": "Maxspect",
-  "codeowners": ["@rbickel"],
+  "codeowners": [
+    "@rbickel"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/rbickel/maxspect-homeassistant",
   "integration_type": "device",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/rbickel/maxspect-homeassistant/issues",
-  "version": "0.3.7"
+  "version": "0.3.9"
 }
