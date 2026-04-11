@@ -136,6 +136,11 @@ jobs:
       - name: Create zip archive
         run: zip -r maxspect.zip custom_components/maxspect/
 
+      - name: Tag the PR branch commit
+        run: |
+          git tag "${{ steps.beta_tag.outputs.tag }}" "${{ needs.auto-bump-version.outputs.sha }}"
+          git push origin "${{ steps.beta_tag.outputs.tag }}"
+
       - name: Publish beta release
         uses: softprops/action-gh-release@v2
         with:
@@ -144,4 +149,3 @@ jobs:
           prerelease: true
           generate_release_notes: true
           files: maxspect.zip
-          target_commitish: ${{ needs.auto-bump-version.outputs.sha }}

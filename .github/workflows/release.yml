@@ -29,10 +29,6 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create zip archive
-        if: steps.tag_check.outputs.exists == 'false'
-        run: zip -r maxspect.zip custom_components/maxspect/
-
       - name: Create stable release
         if: steps.tag_check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -41,4 +37,3 @@ jobs:
           name: v${{ steps.version.outputs.version }}
           prerelease: false
           generate_release_notes: true
-          files: maxspect.zip
