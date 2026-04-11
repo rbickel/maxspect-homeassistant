@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   validate-version:
     name: Validate manifest version
@@ -30,13 +33,24 @@ jobs:
           LATEST_VERSION="${LATEST_TAG#v}"
 
           python3 - <<EOF
+          import re
           from packaging.version import Version
-          manifest = Version("$MANIFEST_VERSION")
-          latest = Version("$LATEST_VERSION")
+
+          def normalize(v):
+              v = v.strip().lstrip("v")
+              v = re.sub(r"[-.]?(alpha|a)\.?(\d*)$", lambda m: f"a{m.group(2) or '0'}", v, flags=re.I)
+              v = re.sub(r"[-.]?(beta|b)\.?(\d*)$",  lambda m: f"b{m.group(2) or '0'}", v, flags=re.I)
+              v = re.sub(r"[-.]?(rc|preview)\.?(\d*)$", lambda m: f"rc{m.group(2) or '0'}", v, flags=re.I)
+              return v
+
+          raw_manifest = "$MANIFEST_VERSION"
+          raw_latest   = "$LATEST_VERSION"
+          manifest = Version(normalize(raw_manifest))
+          latest   = Version(normalize(raw_latest))
           if manifest <= latest:
-              print(f"ERROR: manifest.json version ($MANIFEST_VERSION) must be greater than the latest release ($LATEST_VERSION).")
+              print(f"ERROR: manifest.json version ({raw_manifest}) must be greater than the latest release ({raw_latest}).")
               raise SystemExit(1)
-          print(f"OK: {manifest} > {latest}")
+          print(f"OK: {raw_manifest} > {raw_latest}")
           EOF
 
   test:
