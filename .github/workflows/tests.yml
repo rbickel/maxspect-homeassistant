@@ -6,6 +6,39 @@ on:
       - main
 
 jobs:
+  validate-version:
+    name: Validate manifest version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check version is greater than latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/maxspect/manifest.json'))['version'])")
+
+          LATEST_TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName --jq '.[0].tagName // ""')
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No existing release found. Accepting version $MANIFEST_VERSION."
+            exit 0
+          fi
+
+          LATEST_VERSION="${LATEST_TAG#v}"
+
+          python3 - <<EOF
+          from packaging.version import Version
+          manifest = Version("$MANIFEST_VERSION")
+          latest = Version("$LATEST_VERSION")
+          if manifest <= latest:
+              print(f"ERROR: manifest.json version ($MANIFEST_VERSION) must be greater than the latest release ($LATEST_VERSION).")
+              raise SystemExit(1)
+          print(f"OK: {manifest} > {latest}")
+          EOF
+
   test:
     name: Run unit tests
     runs-on: ubuntu-latest
