@@ -62,6 +62,7 @@ class GizwitsCloudClient:
         self._uid: str | None = None
         self._did: str | None = None
         self._product_key: str | None = None
+        self._device_name: str | None = None
 
     @property
     def did(self) -> str | None:
@@ -77,6 +78,11 @@ class GizwitsCloudClient:
     def product_key(self) -> str | None:
         """Return the product key of the discovered device."""
         return self._product_key
+
+    @property
+    def device_name(self) -> str | None:
+        """Return the device alias set in the Syna-G cloud app."""
+        return self._device_name
 
     # -- Session management --------------------------------------------
 
@@ -195,9 +201,10 @@ class GizwitsCloudClient:
             if dev.get("product_key") in accepted_keys:
                 self._did = dev["did"]
                 self._product_key = dev.get("product_key")
+                self._device_name = dev.get("dev_alias") or None
                 _LOGGER.debug(
-                    "Discovered device did=%s product_key=%s (online=%s)",
-                    self._did, self._product_key, dev.get("is_online"),
+                    "Discovered device did=%s product_key=%s alias=%s (online=%s)",
+                    self._did, self._product_key, self._device_name, dev.get("is_online"),
                 )
                 return self._did
 
@@ -207,6 +214,7 @@ class GizwitsCloudClient:
             dev = devices[0]
             self._did = dev["did"]
             self._product_key = dev.get("product_key")
+            self._device_name = dev.get("dev_alias") or None
             _LOGGER.warning(
                 "No known Maxspect device found on account %s (%s). "
                 "Falling back to first bound device: did=%s product_key=%s. "

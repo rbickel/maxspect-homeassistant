@@ -19,6 +19,7 @@ from .cloud import (
     GizwitsCloudError,
 )
 from .const import (
+    CONF_CLOUD_DEVICE_NAME,
     CONF_CLOUD_DID,
     CONF_CLOUD_PASSWORD,
     CONF_CLOUD_PRODUCT_KEY,
@@ -116,18 +117,24 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during cloud validation")
                 errors["base"] = "unknown"
             else:
+                device_name = cloud.device_name or ""
+                unique_id = (
+                    f"maxspect_{device_name}"
+                    if device_name
+                    else f"{self._lan_data[CONF_HOST]}:{self._lan_data.get(CONF_PORT, DEFAULT_PORT)}"
+                )
+                title = f"Maxspect {device_name}" if device_name else f"Maxspect {self._lan_data[CONF_HOST]}"
                 full_data = {
                     **self._lan_data,
                     **user_input,
                     CONF_CLOUD_DID: did,
                     CONF_CLOUD_PRODUCT_KEY: cloud.product_key or "",
+                    CONF_CLOUD_DEVICE_NAME: device_name,
                 }
-                host = self._lan_data[CONF_HOST]
-                port = self._lan_data.get(CONF_PORT, DEFAULT_PORT)
-                await self.async_set_unique_id(f"{host}:{port}")
+                await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
-                    title=f"Maxspect {host}",
+                    title=title,
                     data=full_data,
                 )
             finally:
