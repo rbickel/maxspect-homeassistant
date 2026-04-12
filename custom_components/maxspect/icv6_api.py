@@ -285,53 +285,103 @@ def _sync_validate(host: str, port: int) -> None:
 
 
 def _sync_discover(host: str, port: int) -> list[dict]:
-    """Blocking device discovery — may take up to ~10 s on a cold bus."""
-    conn = _ICV6Connection(host, port)
-    conn.connect()
+    """Blocking device discovery — may take up to ~40 s on a cold bus.
 
+    The ICV6's internal serial bus to peripheral devices needs several
+    TCP connections worth of 'beginToSearch' primes to wake up.  From a
+    completely cold start this can require 10+ primes; a warm bus responds
+    after 1-2.
+
+    Strategy:
+      1. Burst-prime phase — send 4 rapid beginToSearch commands on separate
+         TCP connections without waiting for search results.  This warms the
+         internal serial bus as quickly as possible.
+      2. Query phase — alternate prime + query up to 12 times, checking for
+         search results after each query.
+    """
+    prime_pkt = _build_new(_CTRL_ID, 1, 2, 0x21)
+
+    # ------------------------------------------------------------------
+    # Phase 1: burst-prime the serial bus (4 rapid primes)
+    # ------------------------------------------------------------------
+    _LOGGER.debug("ICV6 burst-priming serial bus for %s …", host)
+    for i in range(4):
+        try:
+            conn = _ICV6Connection(host, port)
+            conn.connect()
+            conn.send_recv(prime_pkt, wait=0.5)
+            conn.close()
+        except (OSError, socket.timeout):
+            _LOGGER.debug("ICV6 burst-prime %d/4 connection failed", i + 1)
+        time.sleep(0.2)
+
+    # ------------------------------------------------------------------
+    # Phase 2: prime + query loop (up to 12 attempts)
+    # ------------------------------------------------------------------
     all_devices: list[dict] = []
 
-    for attempt in range(8):
-        _LOGGER.debug("ICV6 search attempt %d/8 …", attempt + 1)
+    for attempt in range(12):
+        _LOGGER.debug("ICV6 search attempt %d/12 …", attempt + 1)
 
-        # Prime the serial bus
-        conn.send_recv(_build_new(_CTRL_ID, 1, 2, 0x21), wait=0.8)
+        # Prime
+        try:
+            conn = _ICV6Connection(host, port)
+            conn.connect()
+            conn.send_recv(prime_pkt, wait=0.8)
+            conn.close()
+        except (OSError, socket.timeout):
+            _LOGGER.debug("ICV6 prime connection failed on attempt %d", attempt + 1)
+            time.sleep(0.3)
+            continue
 
-        # Fresh connection for area 1 query
-        conn.close()
         time.sleep(0.3)
-        conn.connect()
 
-        resp = conn.send_recv(
-            _build_new(_CTRL_ID, 1, 2, 0x22, bytes([1])), wait=1.5
-        )
+        # Query area 1
+        try:
+            conn = _ICV6Connection(host, port)
+            conn.connect()
+            resp = conn.send_recv(
+                _build_new(_CTRL_ID, 1, 2, 0x22, bytes([1])), wait=1.5
+            )
+            conn.close()
+        except (OSError, socket.timeout):
+            _LOGGER.debug("ICV6 query connection failed on attempt %d", attempt + 1)
+            time.sleep(0.3)
+            continue
+
         if resp:
             pkt = _find_new_packet(resp, 0x22)
             if pkt:
-                all_devices.extend(_parse_search_result(pkt))
+                devs = _parse_search_result(pkt)
+                if devs:
+                    _LOGGER.debug(
+                        "ICV6 found %d device(s) on attempt %d",
+                        len(devs), attempt + 1,
+                    )
+                    all_devices.extend(devs)
 
         if all_devices:
             # Bus is warm — query areas 2-4
             for area_num in range(2, 5):
-                conn.close()
                 time.sleep(0.3)
-                conn.connect()
-                resp = conn.send_recv(
-                    _build_new(_CTRL_ID, 1, 2, 0x22, bytes([area_num])),
-                    wait=1.0,
-                )
+                try:
+                    conn = _ICV6Connection(host, port)
+                    conn.connect()
+                    resp = conn.send_recv(
+                        _build_new(_CTRL_ID, 1, 2, 0x22, bytes([area_num])),
+                        wait=1.0,
+                    )
+                    conn.close()
+                except (OSError, socket.timeout):
+                    continue
                 if resp:
                     pkt = _find_new_packet(resp, 0x22)
                     if pkt:
                         all_devices.extend(_parse_search_result(pkt))
-            conn.close()
             return all_devices
 
-        conn.close()
         time.sleep(0.3)
-        conn.connect()
 
-    conn.close()
     return []
 
 
