@@ -50,8 +50,10 @@
       "power":       { "name": "Power" }
     },
     "sensor": {
-      "mode":          { "name": "Mode" },
-      "icv6_mode":     { "name": "Mode" },
+      "mode":               { "name": "Mode" },
+      "icv6_mode":          { "name": "Mode" },
+      "icv6_schedule_points": { "name": "Schedule points" },
+      "icv6_group":         { "name": "Group" },
       "ch1_rpm":       { "name": "Channel 1 RPM" },
       "ch2_rpm":       { "name": "Channel 2 RPM" },
       "ch1_voltage":   { "name": "Channel 1 voltage" },

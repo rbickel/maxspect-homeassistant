@@ -26,11 +26,15 @@ from custom_components.maxspect.icv6_api import (
     ICV6_DEVICE_TYPES,
     ICV6_MODE_NAMES,
     _build_new,
-    _extract_new_payload,
     _find_new_packet,
     _parse_search_result,
 )
-from custom_components.maxspect.sensor import ICV6ChannelSensor, ICV6ModeSensor
+from custom_components.maxspect.sensor import (
+    ICV6ChannelSensor,
+    ICV6GroupSensor,
+    ICV6ModeSensor,
+    ICV6SchedulePointsSensor,
+)
 from custom_components.maxspect.switch import ICV6PowerSwitch
 
 
@@ -139,7 +143,7 @@ class TestICV6PacketBuilding:
 
 
 class TestICV6PacketParsing:
-    """_find_new_packet and _extract_new_payload decode correctly."""
+    """_find_new_packet decodes packets correctly."""
 
     def _make_response(self, sub: int, payload: bytes = b"") -> bytes:
         """Build a minimal valid new-protocol response packet."""
@@ -171,17 +175,18 @@ class TestICV6PacketParsing:
         pkt = _find_new_packet(resp, 0x14)
         assert pkt is not None
 
-    def test_extract_payload_returns_data_bytes(self) -> None:
+    def test_find_packet_returns_data_bytes(self) -> None:
         data = bytes([0, 50, 60, 70, 80])  # mode + 4 channels
         resp = self._make_response(sub=0x14, payload=data)
-        extracted = _extract_new_payload(resp)
-        assert extracted == data
+        pkt = _find_new_packet(resp, 0x14)
+        assert pkt is not None
+        assert pkt[20:-1] == data
 
-    def test_extract_payload_none_for_empty_response(self) -> None:
-        assert _extract_new_payload(b"") is None
+    def test_find_packet_none_for_empty_response(self) -> None:
+        assert _find_new_packet(b"", 0x14) is None
 
-    def test_extract_payload_none_for_garbage(self) -> None:
-        assert _extract_new_payload(b"heartbeathearbeat" + bytes(20)) is None
+    def test_find_packet_none_for_garbage(self) -> None:
+        assert _find_new_packet(b"heartbeathearbeat" + bytes(20), 0x14) is None
 
 
 class TestParseSearchResult:
@@ -766,6 +771,214 @@ class TestICV6ChannelSensor:
         coord = _coordinator({"R6X0B001234": dev})
         sensor = ICV6ChannelSensor(coord, "R6X0B001234", 6)
         assert sensor.native_value == 60
+
+    def test_extra_attrs_no_schedule_has_manual_key(self) -> None:
+        dev = _led_device("R5S2A001602", channels=[50, 50, 50, 50])
+        dev.schedule = []
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ChannelSensor(coord, "R5S2A001602", 1)
+        assert sensor.extra_state_attributes == {"manual": 50}
+
+    def test_extra_attrs_contain_per_channel_schedule(self) -> None:
+        dev = _led_device("R5S2A001602", channels=[40, 60, 60, 60])
+        dev.schedule = [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [40, 60, 60, 60]},
+        ]
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ChannelSensor(coord, "R5S2A001602", 1)
+        attrs = sensor.extra_state_attributes
+        assert attrs["manual"] == 40
+        assert attrs["10:00"] == 0
+        assert attrs["12:00"] == 40
+
+    def test_extra_attrs_for_ch2_picks_correct_column(self) -> None:
+        dev = _led_device("R5S2A001602", channels=[40, 60, 60, 60])
+        dev.schedule = [{"point": 1, "time": "12:00", "channels": [40, 60, 60, 60]}]
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ChannelSensor(coord, "R5S2A001602", 2)
+        attrs = sensor.extra_state_attributes
+        assert attrs["12:00"] == 60
+        assert attrs["manual"] == 60
+
+    def test_auto_schedule_mode_returns_interpolated_value(self) -> None:
+        """In Auto Schedule mode native_value is interpolated, not the manual setpoint."""
+        dev = _led_device("R5S2A001602", mode=1, channels=[99, 99, 99, 99])
+        dev.schedule = [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [40, 60, 60, 60]},
+        ]
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ChannelSensor(coord, "R5S2A001602", 1)
+        # At exactly 11:00 (halfway between 10:00 and 12:00), ch1 = 0 + 0.5*40 = 20
+        import datetime
+        fixed_time = datetime.datetime(2024, 1, 1, 11, 0)
+        from custom_components.maxspect.icv6_api import compute_current_levels
+        result = compute_current_levels(dev.schedule, dev.mode, dev.manual_channels, fixed_time)
+        assert result[0] == 20
+
+    def test_manual_mode_returns_stored_setpoint(self) -> None:
+        """In Manual mode native_value equals the stored channel setpoint."""
+        dev = _led_device("R5S2A001602", mode=0, channels=[40, 60, 60, 60])
+        dev.schedule = [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [100, 100, 100, 100]},
+        ]
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ChannelSensor(coord, "R5S2A001602", 1)
+        # Manual mode ignores schedule — always returns stored manual value
+        assert sensor.native_value == 40
+
+
+class TestComputeCurrentLevels:
+    """Unit tests for the schedule-interpolation helper."""
+
+    from custom_components.maxspect.icv6_api import compute_current_levels as _fn
+
+    def _compute(self, schedule, mode, manual, h, m=0):
+        import datetime
+        from custom_components.maxspect.icv6_api import compute_current_levels
+        return compute_current_levels(schedule, mode, manual, datetime.datetime(2024, 1, 1, h, m))
+
+    def test_manual_mode_returns_manual_channels(self) -> None:
+        assert self._compute([], mode=0, manual=[50, 60], h=12) == [50, 60]
+
+    def test_empty_schedule_returns_manual(self) -> None:
+        assert self._compute([], mode=1, manual=[30, 40], h=12) == [30, 40]
+
+    def test_before_first_point_returns_first(self) -> None:
+        sched = [
+            {"point": 1, "time": "10:00", "channels": [10, 20]},
+            {"point": 2, "time": "12:00", "channels": [40, 60]},
+        ]
+        assert self._compute(sched, mode=1, manual=[0, 0], h=8) == [10, 20]
+
+    def test_after_last_point_returns_last(self) -> None:
+        sched = [
+            {"point": 1, "time": "10:00", "channels": [10, 20]},
+            {"point": 2, "time": "12:00", "channels": [40, 60]},
+        ]
+        assert self._compute(sched, mode=1, manual=[0, 0], h=22) == [40, 60]
+
+    def test_exactly_at_first_point(self) -> None:
+        sched = [
+            {"point": 1, "time": "10:00", "channels": [10, 20]},
+            {"point": 2, "time": "12:00", "channels": [40, 60]},
+        ]
+        assert self._compute(sched, mode=1, manual=[0, 0], h=10) == [10, 20]
+
+    def test_midpoint_interpolation(self) -> None:
+        sched = [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [40, 60, 60, 60]},
+        ]
+        result = self._compute(sched, mode=1, manual=[99, 99, 99, 99], h=11)
+        assert result == [20, 30, 30, 30]
+
+    def test_three_quarters_interpolation(self) -> None:
+        sched = [
+            {"point": 1, "time": "08:00", "channels": [0, 0]},
+            {"point": 2, "time": "12:00", "channels": [100, 80]},
+        ]
+        # 75% of the way from 8:00 to 12:00 = 11:00
+        result = self._compute(sched, mode=1, manual=[0, 0], h=11)
+        assert result == [75, 60]
+
+    def test_real_device_schedule_at_noon(self) -> None:
+        """Matches the user's actual R5 device data at 12:00."""
+        sched = [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "11:00", "channels": [16, 32, 32, 16]},
+            {"point": 3, "time": "12:00", "channels": [40, 60, 60, 60]},
+            {"point": 4, "time": "20:00", "channels": [40, 60, 60, 60]},
+            {"point": 5, "time": "21:05", "channels": [0, 0, 0, 0]},
+        ]
+        result = self._compute(sched, mode=1, manual=[74, 69, 61, 64], h=12)
+        assert result == [40, 60, 60, 60]
+
+
+class TestICV6SchedulePointsSensor:
+
+    def _sensor(self, schedule: list[dict] | None = None) -> ICV6SchedulePointsSensor:
+        dev = _led_device("R5S2A001602")
+        dev.schedule = schedule or []
+        coord = _coordinator({"R5S2A001602": dev})
+        return ICV6SchedulePointsSensor(coord, "R5S2A001602")
+
+    def test_zero_points_when_no_schedule(self) -> None:
+        assert self._sensor([]).native_value == 0
+
+    def test_count_matches_schedule_length(self) -> None:
+        sched = [
+            {"point": i, "time": f"{10 + i:02d}:00", "channels": [40, 60, 60, 60]}
+            for i in range(5)
+        ]
+        assert self._sensor(sched).native_value == 5
+
+    def test_extra_attrs_keyed_by_time(self) -> None:
+        sched = [
+            {"point": 1, "time": "12:00", "channels": [40, 60, 60, 60]},
+            {"point": 2, "time": "21:05", "channels": [0, 0, 0, 0]},
+        ]
+        attrs = self._sensor(sched).extra_state_attributes
+        assert attrs["12:00"] == [40, 60, 60, 60]
+        assert attrs["21:05"] == [0, 0, 0, 0]
+
+    def test_unique_id_format(self) -> None:
+        assert self._sensor()._attr_unique_id == f"icv6_{_HOST}_R5S2A001602_schedule_points"
+
+    def test_translation_key(self) -> None:
+        assert self._sensor()._attr_translation_key == "icv6_schedule_points"
+
+    def test_entity_category_is_diagnostic(self) -> None:
+        from homeassistant.const import EntityCategory
+        assert self._sensor()._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+
+class TestICV6GroupSensor:
+
+    def _sensor(self, group_num: int = 1) -> ICV6GroupSensor:
+        dev = _led_device("R5S2A001602")
+        dev.group_num = group_num
+        coord = _coordinator({"R5S2A001602": dev})
+        return ICV6GroupSensor(coord, "R5S2A001602")
+
+    def test_group_num_reflected(self) -> None:
+        assert self._sensor(group_num=1).native_value == 1
+
+    def test_group_zero(self) -> None:
+        assert self._sensor(group_num=0).native_value == 0
+
+    def test_translation_key(self) -> None:
+        assert self._sensor()._attr_translation_key == "icv6_group"
+
+    def test_unique_id_format(self) -> None:
+        assert self._sensor()._attr_unique_id == f"icv6_{_HOST}_R5S2A001602_group"
+
+    def test_entity_category_is_diagnostic(self) -> None:
+        from homeassistant.const import EntityCategory
+        assert self._sensor()._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+
+class TestICV6ModeSensorAttributes:
+
+    def test_schedule_in_extra_attrs(self) -> None:
+        dev = _led_device("R5S2A001602", mode=1)
+        dev.schedule = [{"point": 1, "time": "12:00", "channels": [40, 60, 60, 60]}]
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ModeSensor(coord, "R5S2A001602")
+        attrs = sensor.extra_state_attributes
+        assert attrs["schedule"] == dev.schedule
+        assert attrs["schedule_points"] == 1
+
+    def test_empty_schedule_in_extra_attrs(self) -> None:
+        dev = _led_device("R5S2A001602", mode=0)
+        dev.schedule = []
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ModeSensor(coord, "R5S2A001602")
+        attrs = sensor.extra_state_attributes
+        assert attrs["schedule"] == []
+        assert attrs["schedule_points"] == 0
 
 
 # ---------------------------------------------------------------------------

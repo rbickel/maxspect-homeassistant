@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MaxspectConfigEntry
@@ -46,11 +46,23 @@ async def async_setup_entry(
     # ── ICV6 path ────────────────────────────────────────────────────────
     if entry.data.get(CONF_DEVICE_PROTOCOL) == DEVICE_PROTOCOL_ICV6:
         assert isinstance(coordinator, ICV6Coordinator)
-        entities = [
-            ICV6PowerSwitch(coordinator, device_id)
-            for device_id in coordinator.data
-        ]
-        async_add_entities(entities)
+        known_ids: set[str] = set()
+
+        @callback
+        def _add_new_icv6_switches() -> None:
+            """Add switch entities for any newly discovered ICV6 devices."""
+            new_switches = [
+                ICV6PowerSwitch(coordinator, device_id)
+                for device_id in coordinator.data
+                if device_id not in known_ids
+            ]
+            for sw in new_switches:
+                known_ids.add(sw._device_id)  # noqa: SLF001
+            if new_switches:
+                async_add_entities(new_switches)
+
+        _add_new_icv6_switches()
+        entry.async_on_unload(coordinator.async_add_listener(_add_new_icv6_switches))
         return
 
     # ── Gizwits path ─────────────────────────────────────────────────────

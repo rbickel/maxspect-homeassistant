@@ -104,7 +104,10 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
                 continue
 
             if state is None:
-                _LOGGER.debug("ICV6: no data from %s (device may be off)", device_id)
+                _LOGGER.warning(
+                    "ICV6: no data returned from %s — device may be off or unreachable",
+                    device_id,
+                )
                 continue
 
             dev.mode = state.get("mode", dev.mode)

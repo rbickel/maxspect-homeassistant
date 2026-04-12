@@ -11,6 +11,7 @@ blocks the HA event loop.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import socket
 import struct
@@ -38,7 +39,59 @@ ICV6_DEVICE_TYPES: dict[str, tuple[str, int, int]] = {
     "A1": ("EggPoints A1", 0x0C, 0),
 }
 
-ICV6_MODE_NAMES: dict[int, str] = {0: "Manual", 1: "Auto Schedule"}
+ICV6_MODE_NAMES: dict[int, str] = {0: "Manual", 1: "Auto Schedule", 2: "Auto Schedule"}
+
+
+def compute_current_levels(
+    schedule: list[dict],
+    mode: int,
+    manual_channels: list[int],
+    now: datetime.datetime | None = None,
+) -> list[int]:
+    """Return the current output brightness for each LED channel.
+
+    Manual mode (0) → returns the stored manual setpoints.
+    Auto Schedule mode (1/2) → linearly interpolates between the two nearest
+    schedule points using the current wall-clock time.  Outside the schedule
+    window the adjacent endpoint value is returned (the last point typically
+    ramps to 0).
+    """
+    if mode == 0 or not schedule:
+        return list(manual_channels)
+
+    if now is None:
+        now = datetime.datetime.now()
+    now_minutes = now.hour * 60 + now.minute
+
+    points: list[tuple[int, list[int]]] = []
+    for pt in schedule:
+        h, m = pt["time"].split(":")
+        points.append((int(h) * 60 + int(m), pt["channels"]))
+    points.sort(key=lambda p: p[0])
+
+    if not points:
+        return list(manual_channels)
+
+    # Before first point → return first point's values
+    if now_minutes < points[0][0]:
+        return list(points[0][1])
+
+    # After last point → return last point's values
+    if now_minutes >= points[-1][0]:
+        return list(points[-1][1])
+
+    # Interpolate between the two bracketing points
+    for i in range(len(points) - 1):
+        t0, ch0 = points[i]
+        t1, ch1 = points[i + 1]
+        if t0 <= now_minutes < t1:
+            span = t1 - t0
+            if span == 0:
+                return list(ch0)
+            frac = (now_minutes - t0) / span
+            return [round(ch0[c] + (ch1[c] - ch0[c]) * frac) for c in range(len(ch0))]
+
+    return list(points[-1][1])
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +108,7 @@ class ICV6ChildDevice:
     proto_cmd: int            # protocol command byte for this device type
     num_channels: int         # 0 for pumps, 4-6 for LEDs
     area: int = 0
+    group_num: int = 0        # group/zone the device belongs to
     # Runtime state (updated on each poll)
     is_on: bool = True
     mode: int = 0
@@ -85,8 +139,10 @@ def _build_new(device_id: bytes, module: int, cmd: int, sub: int,
     return raw + bytes([sum(raw[3:]) & 0xFF])
 
 
-def _find_new_packet(resp: bytes, expected_sub: int) -> bytes | None:
+def _find_new_packet(resp: bytes | None, expected_sub: int) -> bytes | None:
     """Return the first new-protocol packet matching *expected_sub*."""
+    if not resp:
+        return None
     idx = 0
     while idx < len(resp) - 5:
         if resp[idx:idx + 3] == b"\xdd\xee\xff":
@@ -104,18 +160,6 @@ def _find_new_packet(resp: bytes, expected_sub: int) -> bytes | None:
             idx += 1
     return None
 
-
-def _extract_new_payload(resp: bytes) -> bytes | None:
-    """Extract the data payload from the first new-protocol packet found."""
-    if not resp:
-        return None
-    for start in range(len(resp)):
-        if resp[start:start + 3] == b"\xdd\xee\xff":
-            pkt_len = struct.unpack(">H", resp[start + 3:start + 5])[0]
-            pkt = resp[start:start + 5 + pkt_len]
-            if len(pkt) > 20:
-                return pkt[20:-1]   # between sub-command and checksum
-    return None
 
 
 def _parse_search_result(resp: bytes) -> list[dict]:
@@ -143,7 +187,10 @@ def _parse_search_result(resp: bytes) -> list[dict]:
 
         attrs: dict = {}
         if offset + 5 <= len(data):
-            attrs["power_state"] = data[offset + 4]
+            attrs["status_byte"]  = data[offset]
+            attrs["channel_count"] = data[offset + 1]
+            attrs["group_num"]    = data[offset + 2]
+            attrs["power_state"]  = data[offset + 4]
             offset += 5
 
         dev_type: str | None = None
@@ -298,8 +345,11 @@ def _sync_read_device_all(host: str, port: int, device_id: str,
                     _build_new(device_id.encode(), 1, proto_cmd, 0x14),
                     wait=1.0,
                 )
-            payload = _extract_new_payload(resp)
-            if not payload or len(payload) < num_channels + 2:
+            pkt = _find_new_packet(resp, 0x14)
+            if pkt is None or len(pkt) <= 20:
+                continue
+            payload = pkt[20:-1]
+            if len(payload) < num_channels + 2:
                 continue
 
             result: dict = {
@@ -412,6 +462,7 @@ class ICV6Client:
                 proto_cmd=proto_cmd,
                 num_channels=num_channels,
                 area=d.get("area", 0),
+                group_num=attrs.get("group_num", 0),
                 is_on=bool(power_state),
             ))
 

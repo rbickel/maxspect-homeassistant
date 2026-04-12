@@ -11,6 +11,7 @@ from .api import MaxspectConnectionError
 from .cloud import GizwitsCloudError
 from .const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DOMAIN
 from .coordinator import MaxspectCoordinator
+from .icv6_api import ICV6ConnectionError
 from .icv6_coordinator import ICV6Coordinator
 
 import logging
@@ -38,20 +39,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> 
 async def _async_setup_icv6(
     hass: HomeAssistant, entry: MaxspectConfigEntry
 ) -> bool:
-    """Set up an ICV6 hub entry."""
+    """Set up an ICV6 hub entry.
+
+    Only a quick TCP reachability check is performed here so that HA startup
+    is not delayed by the slow serial-bus discovery (up to ~35 s on a cold bus).
+    Discovery runs on the first regular coordinator poll in the background.
+    Entities are added dynamically as devices are found.
+    """
     coordinator = ICV6Coordinator(hass, entry)
 
-    # Initial discovery — raises ConfigEntryNotReady if the hub is unreachable
-    # or no devices are found.
+    # Quick reachability check — fail fast if hub is completely unreachable.
     try:
-        await coordinator.async_config_entry_first_refresh()
-    except Exception as err:
+        await coordinator.client.async_validate_connection()
+    except ICV6ConnectionError as err:
         raise ConfigEntryNotReady(
-            f"ICV6 at {coordinator.host} is not ready: {err}"
+            f"ICV6 at {coordinator.host} is not reachable: {err}"
         ) from err
+
+    # Seed coordinator with empty data so platforms can register listeners
+    # before the first refresh completes.
+    coordinator.async_set_updated_data({})
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Kick off the first real refresh (discovery + state poll) in the background
+    # so it doesn't block HA startup.  Entities are added dynamically when data
+    # arrives via coordinator listeners in sensor.py / switch.py.
+    entry.async_create_background_task(
+        hass,
+        coordinator.async_refresh(),
+        "icv6_initial_discovery",
+    )
+
     return True
 
 

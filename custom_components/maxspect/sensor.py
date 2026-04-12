@@ -16,7 +16,7 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfTime,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MaxspectConfigEntry
@@ -37,7 +37,7 @@ from .const import (
 )
 from .coordinator import MaxspectCoordinator
 from .entity import ICV6Entity, MaxspectEntity
-from .icv6_api import ICV6_MODE_NAMES
+from .icv6_api import ICV6_MODE_NAMES, compute_current_levels
 from .icv6_coordinator import ICV6Coordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,7 +53,22 @@ async def async_setup_entry(
     # ── ICV6 path ────────────────────────────────────────────────────────
     if entry.data.get(CONF_DEVICE_PROTOCOL) == DEVICE_PROTOCOL_ICV6:
         assert isinstance(coordinator, ICV6Coordinator)
-        async_add_entities(_icv6_sensors(coordinator))
+        known_ids: set[str] = set()
+
+        @callback
+        def _add_new_icv6_sensors() -> None:
+            """Add sensor entities for any newly discovered ICV6 devices."""
+            new_entities: list[SensorEntity] = []
+            for device_id, dev in coordinator.data.items():
+                if device_id not in known_ids:
+                    known_ids.add(device_id)
+                    new_entities.extend(_icv6_sensors_for_device(coordinator, device_id, dev))
+            if new_entities:
+                async_add_entities(new_entities)
+
+        # Run immediately (data may already be populated on reload) and on every update.
+        _add_new_icv6_sensors()
+        entry.async_on_unload(coordinator.async_add_listener(_add_new_icv6_sensors))
         return
 
     # ── Gizwits path ─────────────────────────────────────────────────────
@@ -369,16 +384,20 @@ class MaxspectWashReminderSensor(MaxspectEntity, SensorEntity):
 # ICV6 sensor factories
 # ---------------------------------------------------------------------------
 
-def _icv6_sensors(coordinator: ICV6Coordinator) -> list[SensorEntity]:
-    """Create sensor entities for all ICV6 child devices that have channels."""
-    entities: list[SensorEntity] = []
-    for device_id, dev in coordinator.data.items():
-        if dev.num_channels == 0:
-            # Pumps — no data sensors; only a power switch (in switch.py)
-            continue
-        entities.append(ICV6ModeSensor(coordinator, device_id))
-        for ch in range(1, dev.num_channels + 1):
-            entities.append(ICV6ChannelSensor(coordinator, device_id, ch))
+def _icv6_sensors_for_device(
+    coordinator: ICV6Coordinator, device_id: str, dev: object
+) -> list[SensorEntity]:
+    """Create sensor entities for a single ICV6 child device."""
+    entities: list[SensorEntity] = [ICV6GroupSensor(coordinator, device_id)]
+
+    if getattr(dev, "num_channels", 0) == 0:
+        # Pumps — no brightness/schedule sensors; only a power switch (switch.py)
+        return entities
+
+    entities.append(ICV6ModeSensor(coordinator, device_id))
+    entities.append(ICV6SchedulePointsSensor(coordinator, device_id))
+    for ch in range(1, dev.num_channels + 1):
+        entities.append(ICV6ChannelSensor(coordinator, device_id, ch))
     return entities
 
 
@@ -387,7 +406,11 @@ def _icv6_sensors(coordinator: ICV6Coordinator) -> list[SensorEntity]:
 # ---------------------------------------------------------------------------
 
 class ICV6ModeSensor(ICV6Entity, SensorEntity):
-    """Current operating mode of an ICV6 LED device (Manual / Auto Schedule)."""
+    """Current operating mode of an ICV6 LED device (Manual / Auto Schedule).
+
+    The full schedule is exposed as extra state attributes so automations
+    and the HA history panel can access it without needing separate entities.
+    """
 
     _attr_translation_key = "icv6_mode"
 
@@ -400,9 +423,67 @@ class ICV6ModeSensor(ICV6Entity, SensorEntity):
         dev = self.child_device
         return ICV6_MODE_NAMES.get(dev.mode, f"Unknown ({dev.mode})")
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        dev = self.child_device
+        return {
+            "schedule": dev.schedule,
+            "schedule_points": len(dev.schedule),
+        }
+
+
+class ICV6SchedulePointsSensor(ICV6Entity, SensorEntity):
+    """Number of programmed auto-schedule points for an ICV6 LED device.
+
+    The complete schedule (time + per-channel brightness for each point)
+    is included as extra state attributes.
+    """
+
+    _attr_translation_key = "icv6_schedule_points"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: ICV6Coordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_schedule_points"
+
+    @property
+    def native_value(self) -> int:
+        return len(self.child_device.schedule)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        dev = self.child_device
+        attrs: dict = {}
+        for pt in dev.schedule:
+            key = pt["time"]                          # e.g. "12:00"
+            attrs[key] = pt["channels"]               # e.g. [40, 60, 60, 60]
+        return attrs
+
+
+class ICV6GroupSensor(ICV6Entity, SensorEntity):
+    """Group (zone) number this device belongs to on the ICV6 bus."""
+
+    _attr_translation_key = "icv6_group"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: ICV6Coordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_group"
+
+    @property
+    def native_value(self) -> int:
+        return self.child_device.group_num
+
 
 class ICV6ChannelSensor(ICV6Entity, SensorEntity):
-    """Manual brightness level for one LED channel (0-100 %)."""
+    """Current brightness for one LED channel (0-100 %).
+
+    In Manual mode: the stored setpoint.
+    In Auto Schedule mode: the live interpolated value currently being output.
+    Each point in the auto schedule for this channel is included as an
+    extra state attribute (keyed by time string, e.g. "12:00": 40).
+    """
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "%"
@@ -418,8 +499,23 @@ class ICV6ChannelSensor(ICV6Entity, SensorEntity):
 
     @property
     def native_value(self) -> int | None:
-        ch_values = self.child_device.manual_channels
+        dev = self.child_device
         idx = self._channel - 1
-        if ch_values and idx < len(ch_values):
-            return ch_values[idx]
-        return None
+        if not dev.manual_channels or idx >= len(dev.manual_channels):
+            return None
+        current = compute_current_levels(dev.schedule, dev.mode, dev.manual_channels)
+        return current[idx]
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Per-channel schedule values keyed by time string, plus the raw manual setpoint."""
+        dev = self.child_device
+        idx = self._channel - 1
+        attrs: dict = {}
+        if dev.manual_channels and idx < len(dev.manual_channels):
+            attrs["manual"] = dev.manual_channels[idx]
+        for pt in dev.schedule:
+            channels = pt.get("channels", [])
+            if idx < len(channels):
+                attrs[pt["time"]] = channels[idx]
+        return attrs
