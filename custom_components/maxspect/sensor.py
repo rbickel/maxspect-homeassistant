@@ -22,6 +22,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import MaxspectConfigEntry
 from .const import (
     AQUARIUM_20_MODE_NAMES,
+    CONF_DEVICE_PROTOCOL,
+    DEVICE_PROTOCOL_ICV6,
     DEVICE_TYPE_AQUARIUM_20,
     DEVICE_TYPE_AQUARIUM_SYS,
     DEVICE_TYPE_GYRE,
@@ -34,7 +36,9 @@ from .const import (
     MODE_NAMES,
 )
 from .coordinator import MaxspectCoordinator
-from .entity import MaxspectEntity
+from .entity import ICV6Entity, MaxspectEntity
+from .icv6_api import ICV6_MODE_NAMES
+from .icv6_coordinator import ICV6Coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +49,15 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
+
+    # ── ICV6 path ────────────────────────────────────────────────────────
+    if entry.data.get(CONF_DEVICE_PROTOCOL) == DEVICE_PROTOCOL_ICV6:
+        assert isinstance(coordinator, ICV6Coordinator)
+        async_add_entities(_icv6_sensors(coordinator))
+        return
+
+    # ── Gizwits path ─────────────────────────────────────────────────────
+    assert isinstance(coordinator, MaxspectCoordinator)
     unique_base = coordinator.config_entry.unique_id or coordinator.client.host
     dt = coordinator.device_type
 
@@ -350,3 +363,63 @@ class MaxspectWashReminderSensor(MaxspectEntity, SensorEntity):
     def native_value(self) -> int | None:
         val = self.coordinator.data.wash_reminder
         return val if val > 0 else None
+
+
+# ---------------------------------------------------------------------------
+# ICV6 sensor factories
+# ---------------------------------------------------------------------------
+
+def _icv6_sensors(coordinator: ICV6Coordinator) -> list[SensorEntity]:
+    """Create sensor entities for all ICV6 child devices that have channels."""
+    entities: list[SensorEntity] = []
+    for device_id, dev in coordinator.data.items():
+        if dev.num_channels == 0:
+            # Pumps — no data sensors; only a power switch (in switch.py)
+            continue
+        entities.append(ICV6ModeSensor(coordinator, device_id))
+        for ch in range(1, dev.num_channels + 1):
+            entities.append(ICV6ChannelSensor(coordinator, device_id, ch))
+    return entities
+
+
+# ---------------------------------------------------------------------------
+# ICV6 sensor entity classes
+# ---------------------------------------------------------------------------
+
+class ICV6ModeSensor(ICV6Entity, SensorEntity):
+    """Current operating mode of an ICV6 LED device (Manual / Auto Schedule)."""
+
+    _attr_translation_key = "icv6_mode"
+
+    def __init__(self, coordinator: ICV6Coordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_mode"
+
+    @property
+    def native_value(self) -> str | None:
+        dev = self.child_device
+        return ICV6_MODE_NAMES.get(dev.mode, f"Unknown ({dev.mode})")
+
+
+class ICV6ChannelSensor(ICV6Entity, SensorEntity):
+    """Manual brightness level for one LED channel (0-100 %)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "%"
+
+    def __init__(
+        self, coordinator: ICV6Coordinator, device_id: str, channel: int
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._channel = channel
+        # Reuse the existing channel_N translation keys
+        self._attr_translation_key = f"channel_{channel}"
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_ch{channel}"
+
+    @property
+    def native_value(self) -> int | None:
+        ch_values = self.child_device.manual_channels
+        idx = self._channel - 1
+        if ch_values and idx < len(ch_values):
+            return ch_values[idx]
+        return None

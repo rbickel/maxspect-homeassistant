@@ -3,3 +3,4 @@ ha-config/
 ha-venv/
 native app/
 __pycache__/
+icv6_devices.py

@@ -2,11 +2,25 @@
   "config": {
     "step": {
       "user": {
+        "title": "Add Maxspect device",
+        "description": "Choose the type of Maxspect device to add.",
+        "data": {
+          "device_protocol": "Device type"
+        }
+      },
+      "gizwits_lan": {
         "title": "Connect to Maxspect device",
         "description": "Enter the IP address of your Maxspect device on the local network.",
         "data": {
           "host": "Host",
           "port": "Port"
+        }
+      },
+      "icv6": {
+        "title": "Connect to ICV6 Controller",
+        "description": "Enter the IP address of your Maxspect ICV6 controller. Connected devices (LED ramps, pumps) will be discovered automatically.",
+        "data": {
+          "host": "Host"
         }
       },
       "cloud": {
@@ -22,6 +36,7 @@
     "error": {
       "cannot_connect": "Failed to connect to the device. Check the IP address and ensure the device is on the same network.",
       "cloud_auth_failed": "Cloud login failed. Check your Syna-G+ Cloud credentials and region.",
+      "cloud_device_not_found": "Login succeeded but no devices were found on this account. Check that the device is bound to this account in the Syna-G+ app, and that the correct region is selected.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
@@ -30,89 +45,36 @@
   },
   "entity": {
     "switch": {
-      "pump_power": {
-        "name": "Pump power"
-      },
-      "light_power": {
-        "name": "Light"
-      },
-      "power": {
-        "name": "Power"
-      }
+      "pump_power": { "name": "Pump power" },
+      "light_power": { "name": "Light" },
+      "power": { "name": "Power" }
     },
     "sensor": {
-      "mode": {
-        "name": "Mode"
-      },
-      "channel_1": {
-        "name": "Channel 1"
-      },
-      "channel_2": {
-        "name": "Channel 2"
-      },
-      "channel_3": {
-        "name": "Channel 3"
-      },
-      "channel_4": {
-        "name": "Channel 4"
-      },
-      "channel_5": {
-        "name": "Channel 5"
-      },
-      "channel_6": {
-        "name": "Channel 6"
-      },
-      "channel_7": {
-        "name": "Channel 7"
-      },
-      "channel_8": {
-        "name": "Channel 8"
-      },
-      "temperature_1": {
-        "name": "Temperature 1"
-      },
-      "temperature_2": {
-        "name": "Temperature 2"
-      },
-      "pump_level": {
-        "name": "Pump level"
-      },
-      "skimmer_level": {
-        "name": "Skimmer level"
-      },
-      "ch1_rpm": {
-        "name": "Channel 1 RPM"
-      },
-      "ch2_rpm": {
-        "name": "Channel 2 RPM"
-      },
-      "ch1_voltage": {
-        "name": "Channel 1 voltage"
-      },
-      "ch2_voltage": {
-        "name": "Channel 2 voltage"
-      },
-      "ch1_power": {
-        "name": "Channel 1 power"
-      },
-      "ch2_power": {
-        "name": "Channel 2 power"
-      },
-      "timestamp": {
-        "name": "Device timestamp"
-      },
-      "feed_duration": {
-        "name": "Feed duration"
-      },
-      "model_a": {
-        "name": "Pump A model"
-      },
-      "model_b": {
-        "name": "Pump B model"
-      },
-      "wash_reminder": {
-        "name": "Wash reminder"
-      }
+      "mode":          { "name": "Mode" },
+      "icv6_mode":     { "name": "Mode" },
+      "channel_1":     { "name": "Channel 1" },
+      "channel_2":     { "name": "Channel 2" },
+      "channel_3":     { "name": "Channel 3" },
+      "channel_4":     { "name": "Channel 4" },
+      "channel_5":     { "name": "Channel 5" },
+      "channel_6":     { "name": "Channel 6" },
+      "channel_7":     { "name": "Channel 7" },
+      "channel_8":     { "name": "Channel 8" },
+      "temperature_1": { "name": "Temperature 1" },
+      "temperature_2": { "name": "Temperature 2" },
+      "pump_level":    { "name": "Pump level" },
+      "skimmer_level": { "name": "Skimmer level" },
+      "ch1_rpm":       { "name": "Channel 1 RPM" },
+      "ch2_rpm":       { "name": "Channel 2 RPM" },
+      "ch1_voltage":   { "name": "Channel 1 voltage" },
+      "ch2_voltage":   { "name": "Channel 2 voltage" },
+      "ch1_power":     { "name": "Channel 1 power" },
+      "ch2_power":     { "name": "Channel 2 power" },
+      "timestamp":     { "name": "Device timestamp" },
+      "feed_duration": { "name": "Feed duration" },
+      "model_a":       { "name": "Pump A model" },
+      "model_b":       { "name": "Pump B model" },
+      "wash_reminder": { "name": "Wash reminder" }
     }
   }
 }

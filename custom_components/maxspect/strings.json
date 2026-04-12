@@ -2,11 +2,25 @@
   "config": {
     "step": {
       "user": {
+        "title": "Add Maxspect device",
+        "description": "Choose the type of Maxspect device to add.",
+        "data": {
+          "device_protocol": "Device type"
+        }
+      },
+      "gizwits_lan": {
         "title": "Connect to Maxspect device",
         "description": "Enter the IP address of your Maxspect device on the local network.",
         "data": {
           "host": "Host",
           "port": "Port"
+        }
+      },
+      "icv6": {
+        "title": "Connect to ICV6 Controller",
+        "description": "Enter the IP address of your Maxspect ICV6 controller. Connected devices (LED ramps, pumps) will be discovered automatically.",
+        "data": {
+          "host": "Host"
         }
       },
       "cloud": {
@@ -37,6 +51,7 @@
     },
     "sensor": {
       "mode":          { "name": "Mode" },
+      "icv6_mode":     { "name": "Mode" },
       "ch1_rpm":       { "name": "Channel 1 RPM" },
       "ch2_rpm":       { "name": "Channel 2 RPM" },
       "ch1_voltage":   { "name": "Channel 1 voltage" },

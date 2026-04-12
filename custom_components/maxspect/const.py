@@ -5,6 +5,15 @@ DOMAIN = "maxspect"
 DEFAULT_PORT = 12416
 DEFAULT_SCAN_INTERVAL = 30
 
+# ---------------------------------------------------------------------------
+# ICV6 constants
+# ---------------------------------------------------------------------------
+
+# Key used in config-entry data to distinguish ICV6 from Gizwits entries.
+CONF_DEVICE_PROTOCOL = "device_protocol"
+DEVICE_PROTOCOL_GIZWITS = "gizwits"
+DEVICE_PROTOCOL_ICV6 = "icv6"
+
 # Gizwits Cloud API
 CONF_CLOUD_USERNAME = "cloud_username"
 CONF_CLOUD_PASSWORD = "cloud_password"
