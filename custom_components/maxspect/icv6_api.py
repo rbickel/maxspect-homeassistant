@@ -183,7 +183,9 @@ def _parse_search_result(resp: bytes) -> list[dict]:
         raw_id = data[offset:offset + 12]
         offset += 12
 
-        device_id = raw_id[1:].decode("ascii", errors="replace")
+        # Strip padding (0xFF, 0x00, whitespace) before decoding
+        raw_device_id = raw_id[1:].rstrip(b"\x00\xff \t\r\n")
+        device_id = raw_device_id.decode("ascii", errors="replace").rstrip()
 
         attrs: dict = {}
         if offset + 5 <= len(data):
@@ -482,7 +484,9 @@ class ICV6Client:
     async def async_discover_devices(self) -> list[ICV6ChildDevice]:
         """Discover all devices connected to the ICV6 hub.
 
-        This may take up to ~10 s on a cold bus (8 warm-up attempts).
+        Discovery can take up to ~35 s in the worst case on a cold bus,
+        because _sync_discover performs an initial burst/prime phase and
+        then retries multiple times with sleeps between attempts.
         """
         loop = asyncio.get_running_loop()
         try:

@@ -15,7 +15,6 @@ from .icv6_api import (
     ICV6ChildDevice,
     ICV6Client,
     ICV6ConnectionError,
-    ICV6_MODE_NAMES,
     ICV6_TCP_PORT,
 )
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN

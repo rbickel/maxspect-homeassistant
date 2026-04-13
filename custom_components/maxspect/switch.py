@@ -112,14 +112,15 @@ class ICV6PowerSwitch(ICV6Entity, SwitchEntity):
 
     def __init__(self, coordinator: ICV6Coordinator, device_id: str) -> None:
         super().__init__(coordinator, device_id)
-        dev = coordinator.data[device_id]
+        dev = coordinator.data.get(device_id)
         # Pumps → pump_power, everything with channels → light_power
-        self._attr_translation_key = "pump_power" if dev.num_channels == 0 else "light_power"
+        self._attr_translation_key = "pump_power" if dev and dev.num_channels == 0 else "light_power"
         self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_power"
 
     @property
     def is_on(self) -> bool:
-        return self.child_device.is_on
+        dev = self.child_device
+        return dev.is_on if dev else False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_power(self._device_id, True)

@@ -211,11 +211,8 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 device_name = cloud.device_name or ""
-                unique_id = (
-                    f"maxspect_{device_name}"
-                    if device_name
-                    else f"{self._lan_data[CONF_HOST]}:{self._lan_data.get(CONF_PORT, DEFAULT_PORT)}"
-                )
+                # Use host:port as stable unique_id to avoid collisions from user-editable device names
+                unique_id = f"{self._lan_data[CONF_HOST]}:{self._lan_data.get(CONF_PORT, DEFAULT_PORT)}"
                 title = (
                     f"Maxspect {device_name}"
                     if device_name

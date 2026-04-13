@@ -102,11 +102,11 @@ When a device is in **Auto Schedule mode**, `compute_current_levels()` in `icv6_
 
 ### Discovery script
 
-`icv6_devices.py` at the repo root is a standalone CLI tool for testing against real hardware:
+A standalone CLI tool for testing ICV6 discovery against real hardware can be created in `_agent_workdir/icv6_devices.py`:
 
 ```bash
-python3 icv6_devices.py --ip 192.168.50.247          # discover all devices
-python3 icv6_devices.py --ip 192.168.50.247 --device R5S2A001602  # specific device
+python3 _agent_workdir/icv6_devices.py --ip 192.168.50.247          # discover all devices
+python3 _agent_workdir/icv6_devices.py --ip 192.168.50.247 --device R5S2A001602  # specific device
 ```
 
 ---

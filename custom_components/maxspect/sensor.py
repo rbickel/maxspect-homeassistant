@@ -421,11 +421,15 @@ class ICV6ModeSensor(ICV6Entity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         dev = self.child_device
+        if dev is None:
+            return None
         return ICV6_MODE_NAMES.get(dev.mode, f"Unknown ({dev.mode})")
 
     @property
     def extra_state_attributes(self) -> dict:
         dev = self.child_device
+        if dev is None:
+            return {}
         return {
             "schedule": dev.schedule,
             "schedule_points": len(dev.schedule),
@@ -449,11 +453,16 @@ class ICV6SchedulePointsSensor(ICV6Entity, SensorEntity):
 
     @property
     def native_value(self) -> int:
-        return len(self.child_device.schedule)
+        dev = self.child_device
+        if dev is None:
+            return 0
+        return len(dev.schedule)
 
     @property
     def extra_state_attributes(self) -> dict:
         dev = self.child_device
+        if dev is None:
+            return {}
         attrs: dict = {}
         for pt in dev.schedule:
             key = pt["time"]                          # e.g. "12:00"
@@ -472,8 +481,11 @@ class ICV6GroupSensor(ICV6Entity, SensorEntity):
         self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_group"
 
     @property
-    def native_value(self) -> int:
-        return self.child_device.group_num
+    def native_value(self) -> int | None:
+        dev = self.child_device
+        if dev is None:
+            return None
+        return dev.group_num
 
 
 class ICV6ChannelSensor(ICV6Entity, SensorEntity):
@@ -500,6 +512,8 @@ class ICV6ChannelSensor(ICV6Entity, SensorEntity):
     @property
     def native_value(self) -> int | None:
         dev = self.child_device
+        if dev is None:
+            return None
         idx = self._channel - 1
         if not dev.manual_channels or idx >= len(dev.manual_channels):
             return None
@@ -510,6 +524,8 @@ class ICV6ChannelSensor(ICV6Entity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         """Per-channel schedule values keyed by time string, plus the raw manual setpoint."""
         dev = self.child_device
+        if dev is None:
+            return {}
         idx = self._channel - 1
         attrs: dict = {}
         if dev.manual_channels and idx < len(dev.manual_channels):

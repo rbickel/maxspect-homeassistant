@@ -63,19 +63,20 @@ class ICV6Entity(CoordinatorEntity["_ICV6Coordinator"]):
         hub_id = f"icv6_{coordinator.host}"
         child_id = f"icv6_{coordinator.host}_{device_id}"
 
-        child = coordinator.data[device_id]
+        child = coordinator.data.get(device_id)
+        child_type_name = child.type_name if child is not None else "Device"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, child_id)},
-            name=f"{child.type_name} ({device_id})",
+            name=f"{child_type_name} ({device_id})",
             manufacturer="Maxspect",
-            model=child.type_name,
+            model=child_type_name,
             via_device=(DOMAIN, hub_id),
         )
 
     @property
-    def child_device(self) -> "ICV6ChildDevice":
+    def child_device(self) -> "ICV6ChildDevice | None":
         """Return the current state for this child device."""
-        return self.coordinator.data[self._device_id]
+        return self.coordinator.data.get(self._device_id)
 
     @property
     def available(self) -> bool:

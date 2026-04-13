@@ -2,7 +2,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Local control of Maxspect aquarium devices in Home Assistant.
+Home Assistant integration for Maxspect aquarium devices, with fully local ICV6 support and Gizwits cloud + LAN hybrid control.
 
 ## How It Works
 
@@ -97,7 +97,7 @@ Connected LEDs and pumps are discovered automatically after HA starts. Discovery
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for "Maxspect"
-3. Select **Gizwits LAN device**
+3. Select **Gizwits device (Gyre pump, LED lights, Aquarium)**
 4. Enter the **device IP address** (and optionally port)
 5. Enter your **Gizwits / Syna-G+ app credentials** (username, password, region)
 
