@@ -30,9 +30,13 @@ from custom_components.maxspect.icv6_api import (
 )
 from custom_components.maxspect.sensor import (
     ICV6ChannelSensor,
+    ICV6DeviceIdSensor,
     ICV6GroupSensor,
+    ICV6ManualBrightnessSensor,
     ICV6ModeSensor,
+    ICV6ScheduleChannelSensor,
     ICV6SchedulePointsSensor,
+    ICV6ScheduleTimeSensor,
 )
 from custom_components.maxspect.switch import ICV6PowerSwitch
 
@@ -1091,3 +1095,209 @@ class TestICV6ClientValidation:
         with patch("custom_components.maxspect.icv6_api._sync_validate", return_value=None):
             # Must not raise
             await client.async_validate_connection()
+
+
+# ---------------------------------------------------------------------------
+# Section 7 — New ICV6 sensor entity tests
+# ---------------------------------------------------------------------------
+
+class TestICV6ManualBrightnessSensor:
+    """ICV6ManualBrightnessSensor shows the raw manual setpoint, ignoring mode."""
+
+    def _sensor(
+        self, channel: int, channels: list[int] | None = None,
+        mode: int = 0,
+    ) -> ICV6ManualBrightnessSensor:
+        ch = channels if channels is not None else [10, 20, 30, 40]
+        dev = _led_device("R5S2A001602", mode=mode, channels=ch)
+        dev.schedule = [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [100, 100, 100, 100]},
+        ]
+        coord = _coordinator({"R5S2A001602": dev})
+        return ICV6ManualBrightnessSensor(coord, "R5S2A001602", channel)
+
+    def test_returns_manual_value_in_manual_mode(self) -> None:
+        assert self._sensor(1, [50, 60, 70, 80], mode=0).native_value == 50
+
+    def test_returns_manual_value_in_auto_mode(self) -> None:
+        """Unlike ICV6ChannelSensor, always returns the stored manual setpoint."""
+        assert self._sensor(1, [50, 60, 70, 80], mode=1).native_value == 50
+
+    def test_each_channel(self) -> None:
+        for ch, expected in [(1, 10), (2, 20), (3, 30), (4, 40)]:
+            assert self._sensor(ch).native_value == expected
+
+    def test_returns_none_when_empty_channels(self) -> None:
+        assert self._sensor(1, []).native_value is None
+
+    def test_returns_none_when_out_of_range(self) -> None:
+        assert self._sensor(4, [50, 60]).native_value is None
+
+    def test_translation_key(self) -> None:
+        assert self._sensor(2)._attr_translation_key == "icv6_manual_ch2"
+
+    def test_unique_id_format(self) -> None:
+        uid = self._sensor(3)._attr_unique_id
+        assert uid == f"icv6_{_HOST}_R5S2A001602_manual_ch3"
+
+    def test_entity_category_is_diagnostic(self) -> None:
+        from homeassistant.const import EntityCategory
+        assert self._sensor(1)._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+    def test_unit_is_percent(self) -> None:
+        assert self._sensor(1)._attr_native_unit_of_measurement == "%"
+
+
+class TestICV6ScheduleTimeSensor:
+    """ICV6ScheduleTimeSensor shows HH:MM for a given schedule slot."""
+
+    def _sensor(self, slot: int, schedule: list[dict] | None = None) -> ICV6ScheduleTimeSensor:
+        dev = _led_device("R5S2A001602")
+        dev.schedule = schedule if schedule is not None else [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [40, 60, 60, 60]},
+            {"point": 3, "time": "21:05", "channels": [0, 0, 0, 0]},
+        ]
+        coord = _coordinator({"R5S2A001602": dev})
+        return ICV6ScheduleTimeSensor(coord, "R5S2A001602", slot)
+
+    def test_first_slot(self) -> None:
+        assert self._sensor(1).native_value == "10:00"
+
+    def test_second_slot(self) -> None:
+        assert self._sensor(2).native_value == "12:00"
+
+    def test_third_slot(self) -> None:
+        assert self._sensor(3).native_value == "21:05"
+
+    def test_slot_beyond_schedule_returns_none(self) -> None:
+        assert self._sensor(5).native_value is None
+
+    def test_empty_schedule_returns_none(self) -> None:
+        assert self._sensor(1, []).native_value is None
+
+    def test_translation_key(self) -> None:
+        assert self._sensor(2)._attr_translation_key == "icv6_schedule_2_time"
+
+    def test_unique_id_format(self) -> None:
+        uid = self._sensor(3)._attr_unique_id
+        assert uid == f"icv6_{_HOST}_R5S2A001602_sched_3_time"
+
+    def test_extra_attrs_contain_channel_values(self) -> None:
+        sched = [{"point": 1, "time": "12:00", "channels": [40, 60, 60, 60]}]
+        attrs = self._sensor(1, sched).extra_state_attributes
+        assert attrs == {"channel_1": 40, "channel_2": 60, "channel_3": 60, "channel_4": 60}
+
+    def test_extra_attrs_empty_when_slot_missing(self) -> None:
+        assert self._sensor(10).extra_state_attributes == {}
+
+
+class TestICV6ScheduleChannelSensor:
+    """ICV6ScheduleChannelSensor shows brightness for one channel at one schedule point."""
+
+    def _sensor(
+        self, slot: int, channel: int, schedule: list[dict] | None = None,
+    ) -> ICV6ScheduleChannelSensor:
+        dev = _led_device("R5S2A001602")
+        dev.schedule = schedule if schedule is not None else [
+            {"point": 1, "time": "10:00", "channels": [0, 0, 0, 0]},
+            {"point": 2, "time": "12:00", "channels": [40, 60, 60, 60]},
+        ]
+        coord = _coordinator({"R5S2A001602": dev})
+        return ICV6ScheduleChannelSensor(coord, "R5S2A001602", slot, channel)
+
+    def test_slot1_ch1_is_zero(self) -> None:
+        assert self._sensor(1, 1).native_value == 0
+
+    def test_slot2_ch1(self) -> None:
+        assert self._sensor(2, 1).native_value == 40
+
+    def test_slot2_ch2(self) -> None:
+        assert self._sensor(2, 2).native_value == 60
+
+    def test_slot_beyond_schedule_returns_none(self) -> None:
+        assert self._sensor(5, 1).native_value is None
+
+    def test_channel_beyond_schedule_returns_none(self) -> None:
+        sched = [{"point": 1, "time": "10:00", "channels": [10, 20]}]
+        assert self._sensor(1, 4, sched).native_value is None
+
+    def test_empty_schedule_returns_none(self) -> None:
+        assert self._sensor(1, 1, []).native_value is None
+
+    def test_translation_key(self) -> None:
+        assert self._sensor(2, 3)._attr_translation_key == "icv6_schedule_2_ch3"
+
+    def test_unique_id_format(self) -> None:
+        uid = self._sensor(2, 3)._attr_unique_id
+        assert uid == f"icv6_{_HOST}_R5S2A001602_sched_2_ch3"
+
+    def test_unit_is_percent(self) -> None:
+        assert self._sensor(1, 1)._attr_native_unit_of_measurement == "%"
+
+    def test_entity_category_is_diagnostic(self) -> None:
+        from homeassistant.const import EntityCategory
+        assert self._sensor(1, 1)._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+
+class TestICV6DeviceIdSensor:
+    """ICV6DeviceIdSensor shows the full device ID string."""
+
+    def _sensor(self, device_id: str = "R5S2A001602") -> ICV6DeviceIdSensor:
+        dev = _led_device(device_id)
+        coord = _coordinator({device_id: dev})
+        return ICV6DeviceIdSensor(coord, device_id)
+
+    def test_returns_device_id(self) -> None:
+        assert self._sensor("R5S2A001602").native_value == "R5S2A001602"
+
+    def test_translation_key(self) -> None:
+        assert self._sensor()._attr_translation_key == "icv6_device_id"
+
+    def test_unique_id_format(self) -> None:
+        uid = self._sensor()._attr_unique_id
+        assert uid == f"icv6_{_HOST}_R5S2A001602_device_id"
+
+    def test_entity_category_is_diagnostic(self) -> None:
+        from homeassistant.const import EntityCategory
+        assert self._sensor()._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+    def test_returns_none_when_device_missing(self) -> None:
+        dev = _led_device("R5S2A001602")
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6DeviceIdSensor(coord, "R5S2A001602")
+        coord.data = {}
+        assert sensor.native_value is None
+
+
+class TestICV6DeviceInfoEnrichment:
+    """ICV6Entity.device_info includes serial_number and hw_version from discovery."""
+
+    def test_serial_number_in_device_info(self) -> None:
+        dev = _led_device("R5S2A001602")
+        dev.serial_number = "A001602"
+        dev.hw_version = "S2"
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ModeSensor(coord, "R5S2A001602")
+        info = sensor._attr_device_info
+        assert info.get("serial_number") == "A001602"
+
+    def test_hw_version_in_device_info(self) -> None:
+        dev = _led_device("R5S2A001602")
+        dev.serial_number = "A001602"
+        dev.hw_version = "S2"
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ModeSensor(coord, "R5S2A001602")
+        info = sensor._attr_device_info
+        assert info.get("hw_version") == "S2"
+
+    def test_missing_serial_not_in_device_info(self) -> None:
+        dev = _led_device("R5S2A001602")
+        dev.serial_number = ""
+        dev.hw_version = ""
+        coord = _coordinator({"R5S2A001602": dev})
+        sensor = ICV6ModeSensor(coord, "R5S2A001602")
+        info = sensor._attr_device_info
+        assert "serial_number" not in info
+        assert "hw_version" not in info

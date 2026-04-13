@@ -37,8 +37,12 @@ from .const import (
 )
 from .coordinator import MaxspectCoordinator
 from .entity import ICV6Entity, MaxspectEntity
-from .icv6_api import ICV6_MODE_NAMES, compute_current_levels
+from .icv6_api import ICV6_MODE_NAMES, ICV6_DEVICE_TYPES, compute_current_levels
 from .icv6_coordinator import ICV6Coordinator
+
+# Maximum number of schedule point entities pre-created per LED device.
+# Slots beyond the actual schedule count return None (unavailable).
+MAX_SCHEDULE_POINTS = 10
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -388,7 +392,10 @@ def _icv6_sensors_for_device(
     coordinator: ICV6Coordinator, device_id: str, dev: object
 ) -> list[SensorEntity]:
     """Create sensor entities for a single ICV6 child device."""
-    entities: list[SensorEntity] = [ICV6GroupSensor(coordinator, device_id)]
+    entities: list[SensorEntity] = [
+        ICV6GroupSensor(coordinator, device_id),
+        ICV6DeviceIdSensor(coordinator, device_id),
+    ]
 
     if getattr(dev, "num_channels", 0) == 0:
         # Pumps — no brightness/schedule sensors; only a power switch (switch.py)
@@ -396,8 +403,17 @@ def _icv6_sensors_for_device(
 
     entities.append(ICV6ModeSensor(coordinator, device_id))
     entities.append(ICV6SchedulePointsSensor(coordinator, device_id))
-    for ch in range(1, dev.num_channels + 1):
+
+    num_ch = dev.num_channels
+    for ch in range(1, num_ch + 1):
         entities.append(ICV6ChannelSensor(coordinator, device_id, ch))
+        entities.append(ICV6ManualBrightnessSensor(coordinator, device_id, ch))
+
+    for slot in range(1, MAX_SCHEDULE_POINTS + 1):
+        entities.append(ICV6ScheduleTimeSensor(coordinator, device_id, slot))
+        for ch in range(1, num_ch + 1):
+            entities.append(ICV6ScheduleChannelSensor(coordinator, device_id, slot, ch))
+
     return entities
 
 
@@ -535,3 +551,124 @@ class ICV6ChannelSensor(ICV6Entity, SensorEntity):
             if idx < len(channels):
                 attrs[pt["time"]] = channels[idx]
         return attrs
+
+
+class ICV6ManualBrightnessSensor(ICV6Entity, SensorEntity):
+    """Raw manual setpoint for one LED channel (0-100 %).
+
+    Unlike ICV6ChannelSensor which shows the interpolated current output,
+    this sensor always shows the stored manual brightness regardless of mode.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "%"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self, coordinator: ICV6Coordinator, device_id: str, channel: int
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._channel = channel
+        self._attr_translation_key = f"icv6_manual_ch{channel}"
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_manual_ch{channel}"
+
+    @property
+    def native_value(self) -> int | None:
+        dev = self.child_device
+        if dev is None:
+            return None
+        idx = self._channel - 1
+        if not dev.manual_channels or idx >= len(dev.manual_channels):
+            return None
+        return dev.manual_channels[idx]
+
+
+class ICV6ScheduleTimeSensor(ICV6Entity, SensorEntity):
+    """Time for one schedule point slot (e.g. "10:00").
+
+    Returns None when the slot does not exist in the current schedule.
+    Per-channel brightness values for this point are in extra_state_attributes.
+    """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self, coordinator: ICV6Coordinator, device_id: str, slot: int
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._slot = slot  # 1-based
+        self._attr_translation_key = f"icv6_schedule_{slot}_time"
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_sched_{slot}_time"
+
+    @property
+    def native_value(self) -> str | None:
+        dev = self.child_device
+        if dev is None or self._slot > len(dev.schedule):
+            return None
+        return dev.schedule[self._slot - 1]["time"]
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        dev = self.child_device
+        if dev is None or self._slot > len(dev.schedule):
+            return {}
+        pt = dev.schedule[self._slot - 1]
+        attrs: dict = {}
+        for i, val in enumerate(pt.get("channels", []), start=1):
+            attrs[f"channel_{i}"] = val
+        return attrs
+
+
+class ICV6ScheduleChannelSensor(ICV6Entity, SensorEntity):
+    """Brightness for one channel at one schedule point (0-100 %).
+
+    Returns None when the slot does not exist in the current schedule.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "%"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: ICV6Coordinator,
+        device_id: str,
+        slot: int,
+        channel: int,
+    ) -> None:
+        super().__init__(coordinator, device_id)
+        self._slot = slot  # 1-based
+        self._channel = channel  # 1-based
+        self._attr_translation_key = f"icv6_schedule_{slot}_ch{channel}"
+        self._attr_unique_id = (
+            f"icv6_{coordinator.host}_{device_id}_sched_{slot}_ch{channel}"
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        dev = self.child_device
+        if dev is None or self._slot > len(dev.schedule):
+            return None
+        channels = dev.schedule[self._slot - 1].get("channels", [])
+        idx = self._channel - 1
+        if idx >= len(channels):
+            return None
+        return channels[idx]
+
+
+class ICV6DeviceIdSensor(ICV6Entity, SensorEntity):
+    """Full device ID string as a diagnostic sensor."""
+
+    _attr_translation_key = "icv6_device_id"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: ICV6Coordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id)
+        self._attr_unique_id = f"icv6_{coordinator.host}_{device_id}_device_id"
+
+    @property
+    def native_value(self) -> str | None:
+        dev = self.child_device
+        if dev is None:
+            return None
+        return dev.device_id

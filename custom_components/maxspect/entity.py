@@ -65,13 +65,19 @@ class ICV6Entity(CoordinatorEntity["_ICV6Coordinator"]):
 
         child = coordinator.data.get(device_id)
         child_type_name = child.type_name if child is not None else "Device"
-        self._attr_device_info = DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, child_id)},
             name=f"{child_type_name} ({device_id})",
             manufacturer="Maxspect",
             model=child_type_name,
             via_device=(DOMAIN, hub_id),
         )
+        if child is not None:
+            if child.serial_number:
+                info["serial_number"] = child.serial_number
+            if child.hw_version:
+                info["hw_version"] = child.hw_version
+        self._attr_device_info = info
 
     @property
     def child_device(self) -> "ICV6ChildDevice | None":
