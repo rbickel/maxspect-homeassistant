@@ -5,7 +5,6 @@
 ### Option A: Home Assistant Container (quickest)
 
 ```bash
-# Run HA Core in Docker, mounting your custom component in
 docker run -d \
   --name homeassistant \
   --restart=unless-stopped \
@@ -20,30 +19,24 @@ This mounts your working code directly into HA's config, so edits are reflected 
 ### Option B: HA Core in a Python venv (best for debugging)
 
 ```bash
-# Create a venv and install HA Core
 python3 -m venv ha-venv
 source ha-venv/bin/activate
 pip install homeassistant
 
-# Create a config directory and symlink your component
 mkdir -p ha-config/custom_components
 ln -s /home/raphael/Coded/maxspect-homeassistant/custom_components/maxspect \
       ha-config/custom_components/maxspect
 
-# Install extra deps your code uses
-pip install pycountry aiohttp
-
-# Run HA
 hass -c ha-config
 ```
 
-HA will start on `http://localhost:8123`. You can go through onboarding, then add "Jebao Aqua Aquarium Pump" from the Integrations page.
+HA will start on `http://localhost:8123`.
 
 ---
 
 ## 2. Enable Debug Logging
 
-Add this to `ha-config/configuration.yaml`:
+Add to `ha-config/configuration.yaml`:
 
 ```yaml
 logger:
@@ -52,47 +45,114 @@ logger:
     custom_components.maxspect: debug
 ```
 
-This enables verbose output from the integration (all `LOGGER.debug(...)` calls in the code). Logs appear in:
-- **Terminal** (if running `hass` directly)
-- **HA UI** → Settings → System → Logs
-- **File**: `ha-config/home-assistant.log`
+Logs appear in the terminal, in **Settings → System → Logs**, and in `ha-config/home-assistant.log`.
 
 ---
 
-## 3. Key Troubleshooting Points
+## 3. Project Structure
+
+```
+custom_components/maxspect/
+├── __init__.py           # Integration setup / teardown (branches on protocol)
+├── api.py                # Gizwits LAN client (state push receiver)
+├── cloud.py              # Gizwits Cloud REST API client
+├── config_flow.py        # UI-based configuration flow
+├── const.py              # Constants, product key → device type mapping
+├── coordinator.py        # DataUpdateCoordinator for Gizwits devices
+├── entity.py             # Base entities (MaxspectEntity, ICV6Entity)
+├── icv6_api.py           # ICV6 binary protocol + async client
+├── icv6_coordinator.py   # DataUpdateCoordinator for ICV6 hub
+├── sensor.py             # Sensor platform (Gizwits + ICV6)
+├── switch.py             # Switch platform (Gizwits + ICV6)
+├── manifest.json         # Integration metadata
+├── strings.json          # UI strings (source)
+└── translations/
+    └── en.json           # English translations
+```
+
+---
+
+## 4. ICV6 Protocol Overview
+
+The ICV6 controller communicates over **TCP port 80** using a proprietary binary protocol.
+
+### Packet format (new protocol `DD EE FF`)
+
+```
+[DD EE FF] [len 2B BE] [FF] [device_id 11B] [module] [cmd] [sub] [payload…] [checksum]
+```
+
+- Sub-command byte is at offset 19; payload starts at offset 20.
+- Response packets echo the sub-command back (cmd gets `+0x50`).
+- `_find_new_packet(resp, expected_sub)` scans a raw TCP buffer and returns the first packet whose sub-command matches.
+
+### Startup behaviour
+
+ICV6 setup is deliberately non-blocking:
+
+1. A quick TCP reachability check is performed (`async_validate_connection`).
+2. The integration loads and platforms register immediately with empty coordinator data.
+3. Device discovery runs in the background (first coordinator poll).  
+   The ICV6 serial bus requires up to 8 warm-up attempts (~35 s on a cold bus).
+4. Entities appear dynamically once discovery completes.
+
+### Auto Schedule interpolation
+
+When a device is in **Auto Schedule mode**, `compute_current_levels()` in `icv6_api.py` linearly interpolates between the two bracketing schedule points using wall-clock time. Channel sensors report this live interpolated value; the stored manual setpoint is available as the `manual` extra state attribute.
+
+### Discovery script
+
+A standalone CLI tool for testing ICV6 discovery against real hardware can be created in `_agent_workdir/icv6_devices.py`:
+
+```bash
+python3 _agent_workdir/icv6_devices.py --ip 192.168.50.247          # discover all devices
+python3 _agent_workdir/icv6_devices.py --ip 192.168.50.247 --device R5S2A001602  # specific device
+```
+
+---
+
+## 5. Key Troubleshooting Points
 
 | Area | What to check |
 |---|---|
-| **Login/Auth** | The config flow (`config_flow.py`) calls the Gizwits API. Check logs for `Login response status` and error codes. |
-| **Device models** | `__init__.py` loads JSON model files from `models/`. If your pump's `product_key` doesn't match any model file, entities won't appear. |
-| **LAN polling** | The integration polls devices locally on **TCP port 12416** (`const.py`). Your HA host must be on the same network/VLAN as the pumps. |
+| **ICV6 not found** | Check IP, ensure hub is on the same network. Entities appear after the first poll (~35 s). |
+| **ICV6 channel values wrong** | Check mode: Manual → stored setpoint; Auto → interpolated. Look at `extra_state_attributes` for the schedule. |
+| **ICV6 warning: no data returned** | Device may be off or unreachable. Check power and cable connections. |
+| **Gizwits login/auth** | `config_flow.py` calls the Gizwits API. Check logs for `Login response status`. |
+| **Gizwits device models** | `__init__.py` loads JSON model files from `models/`. If your pump's `product_key` doesn't match any model file, entities won't appear. |
+| **Gizwits LAN polling** | Integration polls devices locally on **TCP port 12416**. HA host must be on the same network/VLAN. |
 | **Cloud control** | Control commands go through Gizwits cloud API. Token expiry or regional mismatch (EU/US/CN) will cause failures. |
-| **Coordinator updates** | The `DataUpdateCoordinator` refreshes every **2 seconds** (`const.py`). `UpdateFailed` exceptions in logs indicate polling issues. |
 
 ---
 
-## 4. Live Editing & Reloading
-
-After making code changes:
-
-1. **Quick reload**: Go to HA UI → Settings → Integrations → Jebao Aqua → ⋮ menu → **Reload**
-2. **Full restart**: Stop and re-run `hass -c ha-config` (needed for changes to `__init__.py` setup or `manifest.json`)
-
----
-
-## 5. Interactive Debugging (Option B only)
-
-For breakpoint debugging with the venv approach:
+## 6. Running Tests
 
 ```bash
-# Install debugpy
-pip install debugpy
+source ha-venv/bin/activate
+python3 -m pytest tests/ -v
+```
 
-# Run HA with debugger attached
+Tests cover the ICV6 protocol helpers, coordinator logic, and all entity types. No real hardware required — all ICV6 I/O is mocked via `unittest.mock`.
+
+---
+
+## 7. Live Editing & Reloading
+
+After code changes:
+
+1. **Quick reload**: HA UI → Settings → Integrations → Maxspect → ⋮ → **Reload**
+2. **Full restart**: Stop and re-run `hass -c ha-config` (needed for `__init__.py` or `manifest.json` changes)
+
+---
+
+## 8. Interactive Debugging (Option B only)
+
+```bash
+pip install debugpy
 python -m debugpy --listen 5678 --wait-for-client -m homeassistant -c ha-config
 ```
 
-Then attach VS Code's debugger with this `launch.json`:
+Then attach VS Code:
 
 ```json
 {
@@ -101,18 +161,4 @@ Then attach VS Code's debugger with this `launch.json`:
   "request": "attach",
   "connect": { "host": "localhost", "port": 5678 }
 }
-```
-
-You can then set breakpoints in any file under `custom_components/jebao_aqua/`.
-
----
-
-## 6. Testing Without Real Hardware
-
-If you don't have pumps available, you can mock the API layer. A quick approach:
-
-```python
-# In api.py, temporarily add mock responses to test the UI flow
-async def get_device_data(self, device_id):
-    return {"Power": 1, "Speed": 50, "Mode": 1, "Fault": 0}  # fake data
 ```

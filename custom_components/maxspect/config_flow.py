@@ -25,20 +25,47 @@ from .const import (
     CONF_CLOUD_PRODUCT_KEY,
     CONF_CLOUD_REGION,
     CONF_CLOUD_USERNAME,
+    CONF_DEVICE_PROTOCOL,
     DEFAULT_CLOUD_REGION,
     DEFAULT_PORT,
+    DEVICE_PROTOCOL_GIZWITS,
+    DEVICE_PROTOCOL_ICV6,
     DOMAIN,
     GIZWITS_APP_ID,
     GIZWITS_KNOWN_PRODUCT_KEYS,
 )
+from .icv6_api import ICV6Client, ICV6ConnectionError, ICV6_TCP_PORT
 
+_LOGGER = logging.getLogger(__name__)
+
+# Step 1: device-type selector
 STEP_USER_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_DEVICE_PROTOCOL, default=DEVICE_PROTOCOL_GIZWITS): vol.In(
+            {
+                DEVICE_PROTOCOL_GIZWITS: "Gizwits device (Gyre pump, LED lights, Aquarium)",
+                DEVICE_PROTOCOL_ICV6: "ICV6 Controller",
+            }
+        )
+    }
+)
+
+# Step 2a: Gizwits — LAN connection details
+STEP_GIZWITS_LAN_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
         vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
     }
 )
 
+# Step 2b: ICV6 — just an IP address
+STEP_ICV6_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_HOST): str,
+    }
+)
+
+# Step 3 (Gizwits only): cloud credentials
 STEP_CLOUD_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_CLOUD_USERNAME): str,
@@ -49,8 +76,6 @@ STEP_CLOUD_DATA_SCHEMA = vol.Schema(
     }
 )
 
-_LOGGER = logging.getLogger(__name__)
-
 
 class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Maxspect."""
@@ -59,12 +84,77 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialise flow state."""
+        self._protocol: str = DEVICE_PROTOCOL_GIZWITS
         self._lan_data: dict[str, Any] = {}
+
+    # ------------------------------------------------------------------
+    # Step 1: device-type selection
+    # ------------------------------------------------------------------
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the initial step — user provides device IP."""
+        """Ask whether the user is adding a Gizwits device or an ICV6."""
+        if user_input is not None:
+            self._protocol = user_input[CONF_DEVICE_PROTOCOL]
+            if self._protocol == DEVICE_PROTOCOL_ICV6:
+                return await self.async_step_icv6()
+            return await self.async_step_gizwits_lan()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+        )
+
+    # ------------------------------------------------------------------
+    # ICV6 path: single IP step → discover → create entry
+    # ------------------------------------------------------------------
+
+    async def async_step_icv6(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle ICV6 IP entry and immediate discovery."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            client = ICV6Client(host=host, port=ICV6_TCP_PORT)
+
+            try:
+                await client.async_validate_connection()
+            except ICV6ConnectionError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error validating ICV6 connection")
+                errors["base"] = "unknown"
+            else:
+                unique_id = f"icv6_{host}"
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=f"ICV6 {host}",
+                    data={
+                        CONF_HOST: host,
+                        CONF_PORT: ICV6_TCP_PORT,
+                        CONF_DEVICE_PROTOCOL: DEVICE_PROTOCOL_ICV6,
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="icv6",
+            data_schema=STEP_ICV6_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    # ------------------------------------------------------------------
+    # Gizwits path: LAN → Cloud (existing behaviour)
+    # ------------------------------------------------------------------
+
+    async def async_step_gizwits_lan(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Validate Gizwits LAN connection details."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -79,19 +169,22 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
             except Exception:  # noqa: BLE001
                 errors["base"] = "unknown"
             else:
-                self._lan_data = user_input
+                self._lan_data = {
+                    **user_input,
+                    CONF_DEVICE_PROTOCOL: DEVICE_PROTOCOL_GIZWITS,
+                }
                 return await self.async_step_cloud()
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            step_id="gizwits_lan",
+            data_schema=STEP_GIZWITS_LAN_DATA_SCHEMA,
             errors=errors,
         )
 
     async def async_step_cloud(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle step 2 — Gizwits Cloud credentials for device control."""
+        """Handle Gizwits Cloud credentials."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -118,12 +211,13 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 device_name = cloud.device_name or ""
-                unique_id = (
-                    f"maxspect_{device_name}"
+                # Use host:port as stable unique_id to avoid collisions from user-editable device names
+                unique_id = f"{self._lan_data[CONF_HOST]}:{self._lan_data.get(CONF_PORT, DEFAULT_PORT)}"
+                title = (
+                    f"Maxspect {device_name}"
                     if device_name
-                    else f"{self._lan_data[CONF_HOST]}:{self._lan_data.get(CONF_PORT, DEFAULT_PORT)}"
+                    else f"Maxspect {self._lan_data[CONF_HOST]}"
                 )
-                title = f"Maxspect {device_name}" if device_name else f"Maxspect {self._lan_data[CONF_HOST]}"
                 full_data = {
                     **self._lan_data,
                     **user_input,
@@ -133,10 +227,7 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=title,
-                    data=full_data,
-                )
+                return self.async_create_entry(title=title, data=full_data)
             finally:
                 await cloud.async_close()
 
