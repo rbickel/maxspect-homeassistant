@@ -84,6 +84,9 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
                     # Preserve runtime state but update discovery attrs
                     existing = current[dev.device_id]
                     existing.area = dev.area
+                    existing.is_on = dev.is_on
+                    existing.mode = dev.mode
+                    existing.group_num = dev.group_num
 
             self._last_discovery = now
             devices = current

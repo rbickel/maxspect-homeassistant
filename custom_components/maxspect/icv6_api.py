@@ -191,12 +191,12 @@ def _parse_search_result(resp: bytes) -> list[dict]:
         device_id = raw_device_id.decode("ascii", errors="replace").rstrip()
 
         attrs: dict = {}
-        if offset + 5 <= len(data):
+        if offset + 6 <= len(data):
             attrs["status_byte"]  = data[offset]
             attrs["channel_count"] = data[offset + 1]
             attrs["group_num"]    = data[offset + 2]
-            attrs["power_state"]  = data[offset + 4]
-            offset += 5
+            attrs["power_state"]  = data[offset + 5]
+            offset += 6
 
         dev_type: str | None = None
         for t in ICV6_DEVICE_TYPES:
@@ -392,16 +392,30 @@ def _sync_discover(host: str, port: int) -> list[dict]:
 
 def _sync_read_device_all(host: str, port: int, device_id: str,
                           proto_cmd: int, num_channels: int) -> dict | None:
-    """Blocking read of all device config; retry once if first attempt fails."""
-    for _ in range(2):
+    """Blocking read of all device config with bus priming.
+
+    The ICV6 serial bus often needs priming before it will forward a
+    device-level 0x14 (getAllData) command.  We prime with beginToSearch
+    (0x21) first, then send the read on the same connection.  Three full
+    attempts are made with increasing wait times.
+    """
+    prime_pkt = _build_new(_CTRL_ID, 1, 2, 0x21)
+    read_pkt = _build_new(device_id.encode(), 1, proto_cmd, 0x14)
+
+    for attempt in range(3):
         try:
             with _ICV6Connection(host, port) as conn:
-                resp = conn.send_recv(
-                    _build_new(device_id.encode(), 1, proto_cmd, 0x14),
-                    wait=1.0,
-                )
+                # Prime the serial bus on this connection
+                conn.send_recv(prime_pkt, wait=0.8)
+                # Now send the device read on the same (warm) connection
+                resp = conn.send_recv(read_pkt, wait=1.5 + attempt * 0.5)
             pkt = _find_new_packet(resp, 0x14)
             if pkt is None or len(pkt) <= 20:
+                _LOGGER.debug(
+                    "ICV6 read_device_all attempt %d/%d: no 0x14 response for %s",
+                    attempt + 1, 3, device_id,
+                )
+                time.sleep(0.3)
                 continue
             payload = pkt[20:-1]
             if len(payload) < num_channels + 2:
@@ -429,7 +443,10 @@ def _sync_read_device_all(host: str, port: int, device_id: str,
 
             return result
         except (OSError, socket.timeout):
-            pass
+            _LOGGER.debug(
+                "ICV6 read_device_all attempt %d/%d: connection error for %s",
+                attempt + 1, 3, device_id,
+            )
     return None
 
 
@@ -520,6 +537,10 @@ class ICV6Client:
             hw_ver = did[2:4] if len(did) > 3 else ""
             serial = did[4:] if len(did) > 4 else did
 
+            # status_byte from discovery is the device mode
+            # (0=Manual, 1/2=Auto Schedule)
+            discovery_mode = attrs.get("status_byte", 0)
+
             devices.append(ICV6ChildDevice(
                 device_id=did,
                 device_type=dev_type,
@@ -531,6 +552,7 @@ class ICV6Client:
                 serial_number=serial,
                 hw_version=hw_ver,
                 is_on=bool(power_state),
+                mode=discovery_mode,
             ))
 
         _LOGGER.debug("ICV6 discovered %d device(s): %s",
