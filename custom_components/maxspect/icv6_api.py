@@ -109,6 +109,9 @@ class ICV6ChildDevice:
     num_channels: int         # 0 for pumps, 4-6 for LEDs
     area: int = 0
     group_num: int = 0        # group/zone the device belongs to
+    # Device metadata (parsed from device_id string)
+    serial_number: str = ""   # e.g. "A001602" from "R5S2A001602"
+    hw_version: str = ""      # e.g. "S2" (series/revision from device_id)
     # Runtime state (updated on each poll)
     is_on: bool = True
     mode: int = 0
@@ -509,14 +512,24 @@ class ICV6Client:
             type_name, proto_cmd, num_channels = ICV6_DEVICE_TYPES[dev_type]
             attrs = d.get("attrs", {})
             power_state = attrs.get("power_state", 1)
+            # Parse serial and hw version from device_id string.
+            # Format: "<type><series><serial>", e.g. "R5S2A001602"
+            #  type = first 2 chars ("R5"), series = next 2 ("S2"),
+            #  serial = remainder ("A001602")
+            did = d["device_id"]
+            hw_ver = did[2:4] if len(did) > 3 else ""
+            serial = did[4:] if len(did) > 4 else did
+
             devices.append(ICV6ChildDevice(
-                device_id=d["device_id"],
+                device_id=did,
                 device_type=dev_type,
                 type_name=type_name,
                 proto_cmd=proto_cmd,
                 num_channels=num_channels,
                 area=d.get("area", 0),
                 group_num=attrs.get("group_num", 0),
+                serial_number=serial,
+                hw_version=hw_ver,
                 is_on=bool(power_state),
             ))
 
