@@ -394,19 +394,21 @@ def _sync_read_device_all(host: str, port: int, device_id: str,
                           proto_cmd: int, num_channels: int) -> dict | None:
     """Blocking read of all device config with bus priming.
 
-    The ICV6 serial bus often needs priming before it will forward a
-    device-level 0x14 (getAllData) command.  We prime with beginToSearch
-    (0x21) first, then send the read on the same connection.  Three full
-    attempts are made with increasing wait times.
+    The ICV6 serial bus requires a prime (0x21) followed by a search
+    query (0x22) on the SAME TCP connection before it will forward
+    device-level commands like 0x14 (getAllData).  A prime alone is not
+    sufficient.  Three full attempts are made with increasing wait times.
     """
     prime_pkt = _build_new(_CTRL_ID, 1, 2, 0x21)
+    search_pkt = _build_new(_CTRL_ID, 1, 2, 0x22, bytes([1]))
     read_pkt = _build_new(device_id.encode(), 1, proto_cmd, 0x14)
 
     for attempt in range(3):
         try:
             with _ICV6Connection(host, port) as conn:
-                # Prime the serial bus on this connection
+                # Prime + search on the same connection to wake the bus
                 conn.send_recv(prime_pkt, wait=0.8)
+                conn.send_recv(search_pkt, wait=1.0)
                 # Now send the device read on the same (warm) connection
                 resp = conn.send_recv(read_pkt, wait=1.5 + attempt * 0.5)
             pkt = _find_new_packet(resp, 0x14)
@@ -434,10 +436,16 @@ def _sync_read_device_all(host: str, port: int, device_id: str,
                 for i in range(num_points):
                     off = sched_start + 1 + i * pt_size
                     if off + pt_size <= len(payload):
+                        hour = payload[off + 1]
+                        minute = payload[off + 2]
+                        channels = list(payload[off + 3:off + 3 + num_channels])
+                        # Skip empty slots (time 00:00 with all channels 0)
+                        if hour == 0 and minute == 0 and all(c == 0 for c in channels):
+                            continue
                         points.append({
                             "point": payload[off],
-                            "time": f"{payload[off + 1]:02d}:{payload[off + 2]:02d}",
-                            "channels": list(payload[off + 3:off + 3 + num_channels]),
+                            "time": f"{hour:02d}:{minute:02d}",
+                            "channels": channels,
                         })
                 result["schedule"] = points
 
@@ -453,8 +461,12 @@ def _sync_read_device_all(host: str, port: int, device_id: str,
 def _sync_set_power(host: str, port: int, device_id: str,
                     proto_cmd: int, on: bool) -> bool:
     """Blocking power on/off command. Returns True on success."""
+    prime_pkt = _build_new(_CTRL_ID, 1, 2, 0x21)
+    search_pkt = _build_new(_CTRL_ID, 1, 2, 0x22, bytes([1]))
     try:
         with _ICV6Connection(host, port) as conn:
+            conn.send_recv(prime_pkt, wait=0.8)
+            conn.send_recv(search_pkt, wait=1.0)
             conn.send_recv(
                 _build_new(device_id.encode(), 1, proto_cmd, 0x02,
                            bytes([1 if on else 0])),
@@ -468,9 +480,13 @@ def _sync_set_power(host: str, port: int, device_id: str,
 def _sync_set_brightness(host: str, port: int, device_id: str,
                          proto_cmd: int, channels: list[int]) -> bool:
     """Blocking brightness write. Values 0-100 (%). Returns True on success."""
+    prime_pkt = _build_new(_CTRL_ID, 1, 2, 0x21)
+    search_pkt = _build_new(_CTRL_ID, 1, 2, 0x22, bytes([1]))
     payload = bytes(max(0, min(100, v)) for v in channels)
     try:
         with _ICV6Connection(host, port) as conn:
+            conn.send_recv(prime_pkt, wait=0.8)
+            conn.send_recv(search_pkt, wait=1.0)
             conn.send_recv(
                 _build_new(device_id.encode(), 1, proto_cmd, 0x0C, payload),
                 wait=2.0,

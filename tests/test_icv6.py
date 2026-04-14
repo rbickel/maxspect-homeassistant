@@ -27,6 +27,9 @@ from custom_components.maxspect.icv6_api import (
     _build_new,
     _find_new_packet,
     _parse_search_result,
+    _sync_read_device_all,
+    _sync_set_brightness,
+    _sync_set_power,
 )
 from custom_components.maxspect.sensor import (
     ICV6ChannelSensor,
@@ -358,7 +361,10 @@ class MockICV6Coordinator:
         self._notifications.append(dict(data))
 
     async def _async_update_data(self) -> dict[str, ICV6ChildDevice]:
-        """Mirrors ICV6Coordinator._async_update_data."""
+        """Mirrors ICV6Coordinator._async_update_data.
+
+        Full device reads only happen during discovery cycles (not every poll).
+        """
         from homeassistant.helpers.update_coordinator import UpdateFailed
 
         now = time.monotonic()
@@ -367,27 +373,28 @@ class MockICV6Coordinator:
             or (now - self._last_discovery) >= _REDISCOVER_INTERVAL
         )
 
-        if needs_discovery:
-            discovered = await self.client.async_discover_devices()
+        if not needs_discovery:
+            return dict(self.data)
 
-            if not discovered and not self.data:
-                raise UpdateFailed("No ICV6 devices found")
+        discovered = await self.client.async_discover_devices()
 
-            current = dict(self.data)
-            for dev in discovered:
-                if dev.device_id not in current:
-                    current[dev.device_id] = dev
-                else:
-                    existing = current[dev.device_id]
-                    existing.area = dev.area
-                    existing.is_on = dev.is_on
-                    existing.mode = dev.mode
-                    existing.group_num = dev.group_num
-            self._last_discovery = now
-            devices = current
-        else:
-            devices = dict(self.data)
+        if not discovered and not self.data:
+            raise UpdateFailed("No ICV6 devices found")
 
+        current = dict(self.data)
+        for dev in discovered:
+            if dev.device_id not in current:
+                current[dev.device_id] = dev
+            else:
+                existing = current[dev.device_id]
+                existing.area = dev.area
+                existing.is_on = dev.is_on
+                existing.mode = dev.mode
+                existing.group_num = dev.group_num
+        self._last_discovery = now
+        devices = current
+
+        # Full device read — only during discovery cycles
         for device_id, dev in devices.items():
             if dev.num_channels == 0:
                 continue
@@ -517,11 +524,14 @@ class TestICV6CoordinatorDiscovery:
 
 class TestICV6CoordinatorPolling:
 
-    async def test_led_device_mode_updated_from_poll(self) -> None:
+    async def test_led_device_mode_updated_on_discovery(self) -> None:
+        """Device reads only happen during discovery cycles."""
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", mode=0)
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        # Force a discovery cycle
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = {
             "mode": 1,
             "manual_channels": [10, 20, 30, 40],
@@ -530,11 +540,12 @@ class TestICV6CoordinatorPolling:
         result = await c._async_update_data()
         assert result["R5S2A001602"].mode == 1
 
-    async def test_led_device_channels_updated_from_poll(self) -> None:
+    async def test_led_device_channels_updated_on_discovery(self) -> None:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", channels=[0, 0, 0, 0])
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = {
             "mode": 0,
             "manual_channels": [25, 50, 75, 100],
@@ -543,12 +554,31 @@ class TestICV6CoordinatorPolling:
         result = await c._async_update_data()
         assert result["R5S2A001602"].manual_channels == [25, 50, 75, 100]
 
+    async def test_between_discoveries_returns_cached_state(self) -> None:
+        """Between discovery cycles, no bus traffic — cached state returned."""
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602", mode=0, channels=[10, 20, 30, 40])
+        c.data = {"R5S2A001602": dev}
+        c._last_discovery = time.monotonic()
+        c.client.async_read_device.return_value = {
+            "mode": 1,
+            "manual_channels": [99, 99, 99, 99],
+        }
+        result = await c._async_update_data()
+        # Should NOT have called read — no bus traffic
+        c.client.async_read_device.assert_not_awaited()
+        c.client.async_discover_devices.assert_not_awaited()
+        # State unchanged
+        assert result["R5S2A001602"].mode == 0
+        assert result["R5S2A001602"].manual_channels == [10, 20, 30, 40]
+
     async def test_pump_device_not_polled(self) -> None:
         """Pumps have 0 channels — async_read_device must not be called for them."""
         c = _mock_coordinator()
         pump = _pump_device("G2X0B001234")
         c.data = {"G2X0B001234": pump}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         await c._async_update_data()
         c.client.async_read_device.assert_not_awaited()
 
@@ -556,16 +586,18 @@ class TestICV6CoordinatorPolling:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", channels=[40, 50, 60, 70])
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = None  # device not responding
         result = await c._async_update_data()
         assert result["R5S2A001602"].manual_channels == [40, 50, 60, 70]
 
-    async def test_schedule_updated_from_poll(self) -> None:
+    async def test_schedule_updated_on_discovery(self) -> None:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602")
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         schedule = [{"point": 1, "time": "08:00", "channels": [10, 20, 30, 40]}]
         c.client.async_read_device.return_value = {
             "mode": 1,
@@ -575,12 +607,13 @@ class TestICV6CoordinatorPolling:
         result = await c._async_update_data()
         assert result["R5S2A001602"].schedule == schedule
 
-    async def test_poll_called_with_correct_proto_cmd(self) -> None:
+    async def test_read_called_with_correct_proto_cmd_on_discovery(self) -> None:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", device_type="R5")
         expected_cmd = ICV6_DEVICE_TYPES["R5"][1]  # 0x0F
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = None
         await c._async_update_data()
         c.client.async_read_device.assert_awaited_once_with(
@@ -1268,3 +1301,326 @@ class TestICV6DeviceInfoEnrichment:
         info = sensor._attr_device_info
         assert "serial_number" not in info
         assert "hw_version" not in info
+
+
+# ---------------------------------------------------------------------------
+# Section 8 — ICV6 bus handshake sequence
+# ---------------------------------------------------------------------------
+
+def _make_mock_connection(third_response: bytes | None = None):
+    """Return (ctx_mock, conn_mock) where ctx_mock is a context manager mock
+    wrapping conn_mock (used to replace _ICV6Connection in tests).
+
+    send_recv side-effects: None (prime), None (search), third_response (device cmd).
+    """
+    conn = MagicMock()
+    conn.send_recv.side_effect = [None, None, third_response]
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=conn)
+    ctx.__exit__ = MagicMock(return_value=False)
+    return ctx, conn
+
+
+def _minimal_read_response(num_channels: int = 4, proto_cmd: int = 0x0F) -> bytes:
+    """Build a minimal valid 0x14 response packet for _sync_read_device_all.
+
+    Args:
+        num_channels: Number of LED channels the device reports (drives payload size).
+        proto_cmd: Protocol command byte used for this device type (e.g. 0x0F for R5).
+    """
+    # payload: mode(1) + channels(n) + num_points(1) = n+2 bytes minimum
+    payload = bytes([0]) + bytes(num_channels) + bytes([0])
+    return _build_new(b"R5S2A001602", 1, proto_cmd, 0x14, payload)
+
+
+class TestICV6ConnectionHandshake:
+    """Prime (0x21) + search (0x22) must be sent on the same connection
+    before any device-level command (0x14 / 0x02 / 0x0C)."""
+
+    # ── _sync_read_device_all ────────────────────────────────────────────────
+
+    def test_read_device_all_sends_prime_first(self) -> None:
+        ctx, conn = _make_mock_connection(_minimal_read_response())
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_read_device_all(_HOST, 12416, "R5S2A001602", 0x0F, 4)
+        first_pkt = conn.send_recv.call_args_list[0][0][0]
+        assert first_pkt[19] == 0x21, "first send_recv must carry prime (0x21)"
+
+    def test_read_device_all_sends_search_second(self) -> None:
+        ctx, conn = _make_mock_connection(_minimal_read_response())
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_read_device_all(_HOST, 12416, "R5S2A001602", 0x0F, 4)
+        second_pkt = conn.send_recv.call_args_list[1][0][0]
+        assert second_pkt[19] == 0x22, "second send_recv must carry search (0x22)"
+
+    def test_read_device_all_sends_0x14_third(self) -> None:
+        ctx, conn = _make_mock_connection(_minimal_read_response())
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_read_device_all(_HOST, 12416, "R5S2A001602", 0x0F, 4)
+        third_pkt = conn.send_recv.call_args_list[2][0][0]
+        assert third_pkt[19] == 0x14, "third send_recv must carry device read (0x14)"
+
+    def test_read_device_all_three_calls_on_one_connection(self) -> None:
+        ctx, conn = _make_mock_connection(_minimal_read_response())
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_read_device_all(_HOST, 12416, "R5S2A001602", 0x0F, 4)
+        assert conn.send_recv.call_count == 3, "exactly 3 send_recv calls on one connection"
+
+    # ── _sync_set_power ──────────────────────────────────────────────────────
+
+    def test_set_power_sends_prime_first(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, True)
+        first_pkt = conn.send_recv.call_args_list[0][0][0]
+        assert first_pkt[19] == 0x21, "first send_recv must carry prime (0x21)"
+
+    def test_set_power_sends_search_second(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, True)
+        second_pkt = conn.send_recv.call_args_list[1][0][0]
+        assert second_pkt[19] == 0x22, "second send_recv must carry search (0x22)"
+
+    def test_set_power_sends_0x02_third(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, True)
+        third_pkt = conn.send_recv.call_args_list[2][0][0]
+        assert third_pkt[19] == 0x02, "third send_recv must carry power command (0x02)"
+
+    def test_set_power_three_calls_on_one_connection(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, True)
+        assert conn.send_recv.call_count == 3
+
+    def test_set_power_off_payload_is_zero(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, False)
+        third_pkt = conn.send_recv.call_args_list[2][0][0]
+        # payload byte immediately follows sub-command at offset 19; it's at offset 20
+        assert third_pkt[20] == 0x00, "power-off payload must be 0x00"
+
+    def test_set_power_on_payload_is_one(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, True)
+        third_pkt = conn.send_recv.call_args_list[2][0][0]
+        assert third_pkt[20] == 0x01, "power-on payload must be 0x01"
+
+    # ── _sync_set_brightness ─────────────────────────────────────────────────
+
+    def test_set_brightness_sends_prime_first(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_brightness(_HOST, 12416, "R5S2A001602", 0x0F, [50, 60, 70, 80])
+        first_pkt = conn.send_recv.call_args_list[0][0][0]
+        assert first_pkt[19] == 0x21
+
+    def test_set_brightness_sends_search_second(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_brightness(_HOST, 12416, "R5S2A001602", 0x0F, [50, 60, 70, 80])
+        second_pkt = conn.send_recv.call_args_list[1][0][0]
+        assert second_pkt[19] == 0x22
+
+    def test_set_brightness_sends_0x0c_third(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_brightness(_HOST, 12416, "R5S2A001602", 0x0F, [50, 60, 70, 80])
+        third_pkt = conn.send_recv.call_args_list[2][0][0]
+        assert third_pkt[19] == 0x0C, "third send_recv must carry brightness command (0x0C)"
+
+    def test_set_brightness_three_calls_on_one_connection(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_brightness(_HOST, 12416, "R5S2A001602", 0x0F, [50, 60, 70, 80])
+        assert conn.send_recv.call_count == 3
+
+    def test_set_brightness_payload_clamped_to_100(self) -> None:
+        ctx, conn = _make_mock_connection()
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            _sync_set_brightness(_HOST, 12416, "R5S2A001602", 0x0F, [0, 50, 100, 150])
+        third_pkt = conn.send_recv.call_args_list[2][0][0]
+        # channel values start at offset 20
+        assert list(third_pkt[20:24]) == [0, 50, 100, 100], "values above 100 must clamp to 100"
+
+    def test_set_brightness_returns_false_on_oserror(self) -> None:
+        with patch(
+            "custom_components.maxspect.icv6_api._ICV6Connection",
+            side_effect=OSError("refused"),
+        ):
+            result = _sync_set_brightness(_HOST, 12416, "R5S2A001602", 0x0F, [50, 50, 50, 50])
+        assert result is False
+
+    def test_set_power_returns_false_on_oserror(self) -> None:
+        with patch(
+            "custom_components.maxspect.icv6_api._ICV6Connection",
+            side_effect=OSError("refused"),
+        ):
+            result = _sync_set_power(_HOST, 12416, "R5S2A001602", 0x0F, True)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Section 9 — Schedule empty-slot filtering
+# ---------------------------------------------------------------------------
+
+def _build_0x14_response(
+    num_channels: int,
+    proto_cmd: int,
+    mode: int,
+    manual_channels: list[int],
+    points: list[dict],
+) -> bytes:
+    """Build a synthetic 0x14 TCP response that _sync_read_device_all can parse.
+
+    Args:
+        num_channels: Number of LED channels for this device type.
+        proto_cmd: Protocol command byte for this device type (e.g. 0x0F for R5).
+        mode: Device operating mode byte (0 = manual, 1 = auto schedule, …).
+        manual_channels: List of per-channel brightness setpoints (0–100).
+        points: Schedule points. Each dict must have keys:
+            "point" (int), "hour" (int), "minute" (int), "channels" (list[int]).
+    """
+    pt_size = 3 + num_channels
+    payload = bytes([mode]) + bytes(manual_channels[:num_channels]) + bytes([len(points)])
+    for pt in points:
+        payload += bytes(
+            [pt["point"], pt["hour"], pt["minute"]] + pt["channels"][:num_channels]
+        )
+    return _build_new(b"R5S2A001602", 1, proto_cmd, 0x14, payload)
+
+
+class TestICV6ScheduleEmptySlotFiltering:
+    """_sync_read_device_all must skip schedule points where time is 00:00
+    and all channel values are 0 (empty firmware slots)."""
+
+    def _call_read(
+        self,
+        response: bytes,
+        num_channels: int = 4,
+        proto_cmd: int = 0x0F,
+    ) -> dict | None:
+        ctx, conn = _make_mock_connection(response)
+        with patch("custom_components.maxspect.icv6_api._ICV6Connection", return_value=ctx):
+            return _sync_read_device_all(_HOST, 12416, "R5S2A001602", proto_cmd, num_channels)
+
+    def test_empty_slot_is_filtered_out(self) -> None:
+        """A 00:00 / all-zero slot must not appear in the returned schedule."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 0, "hour": 0, "minute": 0, "channels": [0, 0, 0, 0]},  # empty
+                {"point": 1, "hour": 8, "minute": 30, "channels": [10, 20, 30, 40]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert len(result["schedule"]) == 1
+        assert result["schedule"][0]["time"] == "08:30"
+
+    def test_real_point_is_kept(self) -> None:
+        """Real (non-empty) points must always be included."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 1, "hour": 8, "minute": 0, "channels": [10, 20, 30, 40]},
+                {"point": 2, "hour": 20, "minute": 0, "channels": [50, 60, 70, 80]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert len(result["schedule"]) == 2
+
+    def test_multiple_empty_slots_all_filtered(self) -> None:
+        """Multiple empty slots interspersed with real ones — only real ones survive."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 0, "hour": 0, "minute": 0, "channels": [0, 0, 0, 0]},  # empty
+                {"point": 1, "hour": 8, "minute": 0, "channels": [10, 20, 30, 40]},
+                {"point": 2, "hour": 0, "minute": 0, "channels": [0, 0, 0, 0]},  # empty
+                {"point": 3, "hour": 20, "minute": 0, "channels": [50, 60, 70, 80]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert len(result["schedule"]) == 2
+        assert result["schedule"][0]["time"] == "08:00"
+        assert result["schedule"][1]["time"] == "20:00"
+
+    def test_all_empty_slots_returns_empty_schedule(self) -> None:
+        """When every slot is empty the schedule list must be empty."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 0, "hour": 0, "minute": 0, "channels": [0, 0, 0, 0]},
+                {"point": 0, "hour": 0, "minute": 0, "channels": [0, 0, 0, 0]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert result["schedule"] == []
+
+    def test_midnight_with_nonzero_channels_is_kept(self) -> None:
+        """A point at 00:00 with at least one non-zero channel is a real point."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 1, "hour": 0, "minute": 0, "channels": [0, 0, 0, 1]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert len(result["schedule"]) == 1
+        assert result["schedule"][0]["time"] == "00:00"
+
+    def test_nonzero_time_with_zero_channels_is_kept(self) -> None:
+        """A point with a non-midnight time but all-zero channels is a real blackout."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 1, "hour": 21, "minute": 5, "channels": [0, 0, 0, 0]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert len(result["schedule"]) == 1
+        assert result["schedule"][0]["time"] == "21:05"
+
+    def test_schedule_point_fields_are_correct(self) -> None:
+        """Each returned point must have 'point', 'time', and 'channels' keys."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=0,
+            manual_channels=[50, 60, 70, 80],
+            points=[
+                {"point": 2, "hour": 12, "minute": 30, "channels": [40, 60, 60, 60]},
+            ],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        pt = result["schedule"][0]
+        assert pt["point"] == 2
+        assert pt["time"] == "12:30"
+        assert pt["channels"] == [40, 60, 60, 60]
+
+    def test_manual_channels_and_mode_parsed_correctly(self) -> None:
+        """Mode and manual channel values must survive parsing unchanged."""
+        response = _build_0x14_response(
+            num_channels=4, proto_cmd=0x0F, mode=1,
+            manual_channels=[25, 50, 75, 100],
+            points=[],
+        )
+        result = self._call_read(response)
+        assert result is not None
+        assert result["mode"] == 1
+        assert result["manual_channels"] == [25, 50, 75, 100]
