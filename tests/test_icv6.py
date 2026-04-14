@@ -358,7 +358,10 @@ class MockICV6Coordinator:
         self._notifications.append(dict(data))
 
     async def _async_update_data(self) -> dict[str, ICV6ChildDevice]:
-        """Mirrors ICV6Coordinator._async_update_data."""
+        """Mirrors ICV6Coordinator._async_update_data.
+
+        Full device reads only happen during discovery cycles (not every poll).
+        """
         from homeassistant.helpers.update_coordinator import UpdateFailed
 
         now = time.monotonic()
@@ -367,27 +370,28 @@ class MockICV6Coordinator:
             or (now - self._last_discovery) >= _REDISCOVER_INTERVAL
         )
 
-        if needs_discovery:
-            discovered = await self.client.async_discover_devices()
+        if not needs_discovery:
+            return dict(self.data)
 
-            if not discovered and not self.data:
-                raise UpdateFailed("No ICV6 devices found")
+        discovered = await self.client.async_discover_devices()
 
-            current = dict(self.data)
-            for dev in discovered:
-                if dev.device_id not in current:
-                    current[dev.device_id] = dev
-                else:
-                    existing = current[dev.device_id]
-                    existing.area = dev.area
-                    existing.is_on = dev.is_on
-                    existing.mode = dev.mode
-                    existing.group_num = dev.group_num
-            self._last_discovery = now
-            devices = current
-        else:
-            devices = dict(self.data)
+        if not discovered and not self.data:
+            raise UpdateFailed("No ICV6 devices found")
 
+        current = dict(self.data)
+        for dev in discovered:
+            if dev.device_id not in current:
+                current[dev.device_id] = dev
+            else:
+                existing = current[dev.device_id]
+                existing.area = dev.area
+                existing.is_on = dev.is_on
+                existing.mode = dev.mode
+                existing.group_num = dev.group_num
+        self._last_discovery = now
+        devices = current
+
+        # Full device read — only during discovery cycles
         for device_id, dev in devices.items():
             if dev.num_channels == 0:
                 continue
@@ -517,11 +521,14 @@ class TestICV6CoordinatorDiscovery:
 
 class TestICV6CoordinatorPolling:
 
-    async def test_led_device_mode_updated_from_poll(self) -> None:
+    async def test_led_device_mode_updated_on_discovery(self) -> None:
+        """Device reads only happen during discovery cycles."""
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", mode=0)
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        # Force a discovery cycle
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = {
             "mode": 1,
             "manual_channels": [10, 20, 30, 40],
@@ -530,11 +537,12 @@ class TestICV6CoordinatorPolling:
         result = await c._async_update_data()
         assert result["R5S2A001602"].mode == 1
 
-    async def test_led_device_channels_updated_from_poll(self) -> None:
+    async def test_led_device_channels_updated_on_discovery(self) -> None:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", channels=[0, 0, 0, 0])
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = {
             "mode": 0,
             "manual_channels": [25, 50, 75, 100],
@@ -543,12 +551,31 @@ class TestICV6CoordinatorPolling:
         result = await c._async_update_data()
         assert result["R5S2A001602"].manual_channels == [25, 50, 75, 100]
 
+    async def test_between_discoveries_returns_cached_state(self) -> None:
+        """Between discovery cycles, no bus traffic — cached state returned."""
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602", mode=0, channels=[10, 20, 30, 40])
+        c.data = {"R5S2A001602": dev}
+        c._last_discovery = time.monotonic()
+        c.client.async_read_device.return_value = {
+            "mode": 1,
+            "manual_channels": [99, 99, 99, 99],
+        }
+        result = await c._async_update_data()
+        # Should NOT have called read — no bus traffic
+        c.client.async_read_device.assert_not_awaited()
+        c.client.async_discover_devices.assert_not_awaited()
+        # State unchanged
+        assert result["R5S2A001602"].mode == 0
+        assert result["R5S2A001602"].manual_channels == [10, 20, 30, 40]
+
     async def test_pump_device_not_polled(self) -> None:
         """Pumps have 0 channels — async_read_device must not be called for them."""
         c = _mock_coordinator()
         pump = _pump_device("G2X0B001234")
         c.data = {"G2X0B001234": pump}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         await c._async_update_data()
         c.client.async_read_device.assert_not_awaited()
 
@@ -556,16 +583,18 @@ class TestICV6CoordinatorPolling:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", channels=[40, 50, 60, 70])
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = None  # device not responding
         result = await c._async_update_data()
         assert result["R5S2A001602"].manual_channels == [40, 50, 60, 70]
 
-    async def test_schedule_updated_from_poll(self) -> None:
+    async def test_schedule_updated_on_discovery(self) -> None:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602")
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         schedule = [{"point": 1, "time": "08:00", "channels": [10, 20, 30, 40]}]
         c.client.async_read_device.return_value = {
             "mode": 1,
@@ -575,12 +604,13 @@ class TestICV6CoordinatorPolling:
         result = await c._async_update_data()
         assert result["R5S2A001602"].schedule == schedule
 
-    async def test_poll_called_with_correct_proto_cmd(self) -> None:
+    async def test_read_called_with_correct_proto_cmd_on_discovery(self) -> None:
         c = _mock_coordinator()
         dev = _led_device("R5S2A001602", device_type="R5")
         expected_cmd = ICV6_DEVICE_TYPES["R5"][1]  # 0x0F
         c.data = {"R5S2A001602": dev}
-        c._last_discovery = time.monotonic()
+        c._last_discovery = time.monotonic() - _REDISCOVER_INTERVAL - 1
+        c.client.async_discover_devices.return_value = []
         c.client.async_read_device.return_value = None
         await c._async_update_data()
         c.client.async_read_device.assert_awaited_once_with(
