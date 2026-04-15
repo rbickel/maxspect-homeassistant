@@ -9,8 +9,7 @@ and connect the actual MaxspectClient to it.  This validates:
   - State notify push parsing through the full client pipeline
   - Mode update push parsing
   - Heartbeat exchange
-  - Connection loss detection and reconnect
-  - Malformed frame handling
+  - Connection loss detection
 
 No HA runtime is needed — these are pure asyncio tests against the real
 MaxspectClient class with a simulated device.
@@ -36,7 +35,7 @@ def auto_enable_custom_integrations():
 @pytest.fixture(autouse=True)
 def _re_enable_socket():
     """Re-enable sockets after HA plugin disables them in pytest_runtest_setup."""
-    import pytest_socket
+    pytest_socket = pytest.importorskip("pytest_socket")
     pytest_socket.enable_socket()
     yield
     pytest_socket.disable_socket(allow_unix_socket=True)

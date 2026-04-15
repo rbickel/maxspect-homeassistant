@@ -184,17 +184,17 @@ class TestGyrePowerSwitch:
         # Two cloud calls total
         assert mock_gizwits_cloud.async_set_mode.await_count == 2
 
-    async def test_switch_unavailable_when_data_none(
+    async def test_switch_exists_and_operational(
         self,
         hass: HomeAssistant,
         mock_maxspect_client: MagicMock,
         mock_gizwits_cloud: AsyncMock,
         gyre_config_entry: MockConfigEntry,
     ) -> None:
-        """Switch handles None coordinator data gracefully."""
+        """Switch entity exists and is operational after setup."""
         await setup_integration(hass, gyre_config_entry)
 
-        # Verify the switch exists and is available
+        # Verify the switch exists and has a valid state
         state = hass.states.get(SWITCH_ENTITY)
         assert state is not None
         assert state.state in (STATE_ON, STATE_OFF)

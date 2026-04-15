@@ -131,6 +131,9 @@ class TestUnload:
         await hass.async_block_till_done()
 
         assert gyre_config_entry.state is ConfigEntryState.NOT_LOADED
+        # Verify cleanup was performed
+        mock_maxspect_client.async_disconnect.assert_awaited()
+        mock_gizwits_cloud.async_close.assert_awaited()
 
     async def test_unload_then_reload(
         self,
