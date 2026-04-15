@@ -5,6 +5,7 @@ Tests the full entry lifecycle through the real HA runtime:
   - Gizwits setup: LAN connect fails → ConfigEntryNotReady
   - Gizwits setup: cloud login fails → entry still loads (control disabled)
   - Gizwits unload: platforms removed, client disconnected, cloud closed
+  - ICV6 setup: hub device registered before child devices
   - Entry state transitions verified via config_entry.state
 """
 
@@ -23,7 +24,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.maxspect.api import MaxspectConnectionError
 from custom_components.maxspect.cloud import GizwitsCloudError
-from custom_components.maxspect.const import DOMAIN, MODE_ON
+from custom_components.maxspect.const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DOMAIN, MODE_ON
 
 from .conftest import GYRE_CONFIG_DATA, setup_integration
 
@@ -194,3 +195,52 @@ class TestEntityRegistration:
         assert "192.168.1.100:12416_model_a" in unique_ids
         assert "192.168.1.100:12416_model_b" in unique_ids
         assert "192.168.1.100:12416_wash_reminder" in unique_ids
+
+
+# ---------------------------------------------------------------------------
+# ICV6 setup
+# ---------------------------------------------------------------------------
+
+class TestICV6Setup:
+
+    async def test_icv6_hub_device_registered(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """ICV6 setup registers the hub device before child devices are created."""
+        icv6_config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "host": "192.168.50.247",
+                "port": 4196,
+                CONF_DEVICE_PROTOCOL: DEVICE_PROTOCOL_ICV6,
+            },
+            unique_id="icv6_192.168.50.247",
+            title="ICV6 192.168.50.247",
+            version=1,
+        )
+
+        # Mock the ICV6Client
+        with patch(
+            "custom_components.maxspect.icv6_coordinator.ICV6Client",
+        ) as mock_icv6_cls:
+            mock_client = AsyncMock()
+            mock_client.async_validate_connection = AsyncMock()
+            mock_client.async_discover_devices = AsyncMock(return_value=[])
+            mock_icv6_cls.return_value = mock_client
+
+            await setup_integration(hass, icv6_config_entry)
+
+            assert icv6_config_entry.state is ConfigEntryState.LOADED
+
+            # Verify the hub device was registered
+            device_registry = hass.helpers.device_registry.async_get()
+            hub_device = device_registry.async_get_device(
+                identifiers={(DOMAIN, "icv6_192.168.50.247")}
+            )
+
+            assert hub_device is not None
+            assert hub_device.name == "ICV6 Hub (192.168.50.247)"
+            assert hub_device.manufacturer == "Maxspect"
+            assert hub_device.model == "ICV6 Controller"
+            assert hub_device.config_entries == {icv6_config_entry.entry_id}

@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .api import MaxspectConnectionError
 from .cloud import GizwitsCloudError
@@ -55,6 +56,18 @@ async def _async_setup_icv6(
         raise ConfigEntryNotReady(
             f"ICV6 at {coordinator.host} is not reachable: {err}"
         ) from err
+
+    # Register the ICV6 hub device before any child devices are created.
+    # Child devices will reference this hub via via_device.
+    device_registry = dr.async_get(hass)
+    hub_id = f"icv6_{coordinator.host}"
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, hub_id)},
+        name=f"ICV6 Hub ({coordinator.host})",
+        manufacturer="Maxspect",
+        model="ICV6 Controller",
+    )
 
     # Seed coordinator with empty data so platforms can register listeners
     # before the first refresh completes.
