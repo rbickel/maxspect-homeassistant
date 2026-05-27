@@ -10,9 +10,7 @@ from cloud or LAN) and cannot be changed by subsequent updates.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
+from __future__ import annotations
 
 from custom_components.maxspect.api import MaxspectClient, MaxspectDeviceState
 from custom_components.maxspect.const import ATTR_FLAGS_LEN
