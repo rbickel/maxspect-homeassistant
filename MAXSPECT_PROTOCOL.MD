@@ -460,8 +460,8 @@ The product defines **47 data points** (IDs 0–46) across three types:
 | 17 | Version_Firmware | uint8 | byte | 1 | R | e.g. 11 → v1.1 |
 | **18** | **Mode** | **uint8** | **byte** | **1** | **W** | **0=water flow, 1=programming, 2=feed, 3=OFF, 4=exit feed, 5=ON** |
 | 19 | Time_Feed | uint8 | byte | 1 | W | 5–120 minutes |
-| 20 | Model_A | uint8 | byte | 1 | W | 0=330, 1=350 |
-| 21 | Model_B | uint8 | byte | 1 | W | 0=330, 1=350 |
+| 20 | Model_A | uint8 | byte | 1 | W | 0=330, 1=350 (immutable*) |
+| 21 | Model_B | uint8 | byte | 1 | W | 0=330, 1=350 (immutable*) |
 | 22 | Wash | uint8 | byte | 1 | W | Daily reminder countdown |
 | 23–32 | Bak11–Bak20 | uint8 | byte | 1 | W | Reserved |
 | 33 | Serial_Number | binary | 12 B | 12 | R | Device serial number |
@@ -476,6 +476,13 @@ The product defines **47 data points** (IDs 0–46) across three types:
 
 > **All `byte_offset` values = 0** in the product definition — standard for
 > Gizwits V4 `var_len` where data is packed dynamically by attr_flags.
+>
+> **\* Model_A/Model_B immutability**: These DPs represent hardware model codes
+> (0=XF330CE, 1=XF350CE) and should never change during runtime. The integration
+> treats them as immutable after first read (from either cloud or LAN) to prevent
+> device model from incorrectly flipping between XF330CE and XF350CE when receiving
+> inconsistent LAN pushes or cloud data. See `MaxspectDeviceState._model_initialized`
+> in `api.py` for implementation details.
 
 #### Mode Data Point — Power Control
 
