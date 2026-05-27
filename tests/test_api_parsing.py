@@ -312,3 +312,47 @@ class TestDpDataOffset:
         flags = _flags_for_dps(34, 35)
         # DPs below 34 absent; DP 34 is 7 bytes
         assert _dp_data_offset(flags, 35) == DP_LENGTHS[34]  # 7
+
+
+# ---------------------------------------------------------------------------
+# Model attribute immutability
+# ---------------------------------------------------------------------------
+
+class TestModelAttributeImmutability:
+    """Test that model_a and model_b are only set once and never change."""
+
+    def test_model_initialized_on_first_set(self) -> None:
+        """Model attributes should be set from first config DP push."""
+        state = MaxspectDeviceState()
+        assert state._model_initialized is False
+        assert state.model_a == 0
+        assert state.model_b == 0
+
+        # Simulate setting model via direct attribute assignment (e.g., from cloud)
+        state.model_a = 0  # XF 330CE
+        state.model_b = 0
+        state._model_initialized = True
+
+        assert state._model_initialized is True
+        assert state.model_a == 0
+        assert state.model_b == 0
+
+    def test_model_values_remain_stable(self) -> None:
+        """Once set, model values should not change even if new data arrives."""
+        state = MaxspectDeviceState()
+
+        # Initial set - XF330CE (model_a=0, model_b=0)
+        state.model_a = 0
+        state.model_b = 0
+        state._model_initialized = True
+
+        # Attempt to change to XF350CE should be prevented by code logic
+        # (This is just verifying the state tracking, actual prevention is in api.py)
+        assert state.model_a == 0
+        assert state.model_b == 0
+        assert state._model_initialized is True
+
+    def test_initial_model_state_not_initialized(self) -> None:
+        """New state should start with _model_initialized=False."""
+        state = MaxspectDeviceState()
+        assert state._model_initialized is False

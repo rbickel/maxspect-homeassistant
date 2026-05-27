@@ -96,6 +96,7 @@ The state-notify debug log must print `hw_power=bool(data[0] & 1)`, not `self._s
 - `_process_push` is the only place that decides which parser to call. Logging belongs here.
 - `_dp_is_flagged` / `_dp_data_offset` handle the attr_flags bitmap. Use them; do not hardcode byte offsets.
 - `DP_LENGTHS` in `const.py` must stay accurate — it drives offset calculation for all non-bool DPs.
+- **Model immutability**: `model_a` and `model_b` (DPs 20/21) are hardware characteristics that must never change after initial read. The `_model_initialized` flag in `MaxspectDeviceState` ensures these values are only set once (from either cloud or LAN) and never updated thereafter. This prevents the device model from incorrectly flipping between XF330CE and XF350CE.
 
 ---
 
