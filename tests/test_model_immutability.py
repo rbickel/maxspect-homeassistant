@@ -32,8 +32,7 @@ class TestModelImmutability:
 
     def test_model_set_once_from_lan_push(self) -> None:
         """Model attributes set from first LAN config DP push remain stable."""
-        client = MaxspectClient(host="192.168.1.100", product_key="test-key")
-
+        client = MaxspectClient(host="192.168.1.100")
         # Initial state - no model set
         assert client.state.model_a == 0
         assert client.state.model_b == 0
