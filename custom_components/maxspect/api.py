@@ -482,6 +482,7 @@ class MaxspectClient:
         # Config DPs (19-22): uint8 values packed sequentially
         config_dps = [19, 20, 21, 22]
         if any(_dp_is_flagged(flags, dp) for dp in config_dps):
+            model_set = False
             for dp_id in config_dps:
                 if _dp_is_flagged(flags, dp_id):
                     offset = _dp_data_offset(flags, dp_id)
@@ -493,14 +494,16 @@ class MaxspectClient:
                             # Model attributes are immutable - only set once
                             if not self._state._model_initialized:
                                 self._state.model_a = val
+                            model_set = True
                         elif dp_id == 21:
                             # Model attributes are immutable - only set once
                             if not self._state._model_initialized:
                                 self._state.model_b = val
+                            model_set = True
                         elif dp_id == 22:
                             self._state.wash_reminder = val
             # Mark models as initialized after first config DP read
-            if any(_dp_is_flagged(flags, dp) for dp in (20, 21)):
+            if model_set:
                 self._state._model_initialized = True
             _LOGGER.debug(
                 "Config DPs from %s: feed=%d model_a=%d model_b=%d wash=%d",

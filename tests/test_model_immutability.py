@@ -140,3 +140,15 @@ class TestModelImmutability:
         # Model should remain unchanged
         assert client.state.model_a == 0
         assert client.state.model_b == 0
+
+    def test_truncated_model_payload_does_not_lock_defaults(self) -> None:
+        """Model defaults should remain writable when flagged bytes are missing."""
+        client = MaxspectClient(host="192.168.1.100")
+        action = bytes([0x14])
+        flags = _flags_for_dps(20, 21)
+
+        client._process_push(action + flags)
+
+        assert client.state.model_a == 0
+        assert client.state.model_b == 0
+        assert client.state._model_initialized is False
