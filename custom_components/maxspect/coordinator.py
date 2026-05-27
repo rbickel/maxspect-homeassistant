@@ -203,6 +203,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
             # Model attributes are immutable - only set once
             if not state._model_initialized:
+                model_set = False
                 for attr_name, field_name in (
                     ("Model_A", "model_a"),
                     ("Model_B", "model_b"),
@@ -210,7 +211,9 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                     val = attrs.get(attr_name)
                     if val is not None:
                         setattr(state, field_name, int(val))
-                state._model_initialized = True
+                        model_set = True
+                if model_set:
+                    state._model_initialized = True
 
             state.is_on = state.mode != MODE_OFF
             _LOGGER.debug("Seeded Gyre state from cloud: mode=%d is_on=%s", state.mode, state.is_on)
