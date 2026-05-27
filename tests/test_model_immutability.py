@@ -93,8 +93,7 @@ class TestModelImmutability:
 
     def test_model_only_set_if_not_initialized(self) -> None:
         """Verify that model is only set when _model_initialized is False."""
-        client = MaxspectClient(host="192.168.1.100", product_key="test-key")
-
+        client = MaxspectClient(host="192.168.1.100")
         # Pre-initialize the model (e.g., from cloud)
         client.state.model_a = 1  # XF350CE
         client.state.model_b = 1
