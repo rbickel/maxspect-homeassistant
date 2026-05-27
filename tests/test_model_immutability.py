@@ -118,8 +118,7 @@ class TestModelImmutability:
 
     def test_mutable_attributes_continue_to_update(self) -> None:
         """Verify that non-model config attributes still update normally."""
-        client = MaxspectClient(host="192.168.1.100", product_key="test-key")
-
+        client = MaxspectClient(host="192.168.1.100")
         # Set initial config
         action = bytes([0x14])
         flags = _flags_for_dps(19, 20, 21, 22)
