@@ -7,8 +7,9 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import MaxspectClient, MaxspectConnectionError
@@ -26,8 +27,12 @@ from .const import (
     CONF_CLOUD_REGION,
     CONF_CLOUD_USERNAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_MAX_BACKOFF_MULTIPLIER,
+    CONF_UNAVAILABLE_AFTER_FAILURES,
     DEFAULT_CLOUD_REGION,
+    DEFAULT_MAX_BACKOFF_MULTIPLIER,
     DEFAULT_PORT,
+    DEFAULT_UNAVAILABLE_AFTER_FAILURES,
     DEVICE_PROTOCOL_GIZWITS,
     DEVICE_PROTOCOL_ICV6,
     DOMAIN,
@@ -86,6 +91,12 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialise flow state."""
         self._protocol: str = DEVICE_PROTOCOL_GIZWITS
         self._lan_data: dict[str, Any] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Get the options flow for this handler."""
+        return MaxspectOptionsFlow(config_entry)
 
     # ------------------------------------------------------------------
     # Step 1: device-type selection
@@ -235,4 +246,53 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="cloud",
             data_schema=STEP_CLOUD_DATA_SCHEMA,
             errors=errors,
+        )
+
+
+class MaxspectOptionsFlow(OptionsFlow):
+    """Handle options flow for ICV6 devices."""
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options for ICV6 devices."""
+        # Only show options for ICV6 devices
+        if self.config_entry.data.get(CONF_DEVICE_PROTOCOL) != DEVICE_PROTOCOL_ICV6:
+            return self.async_abort(reason="not_icv6")
+
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        # Get current options or use defaults
+        current_max_backoff = self.config_entry.options.get(
+            CONF_MAX_BACKOFF_MULTIPLIER, DEFAULT_MAX_BACKOFF_MULTIPLIER
+        )
+        current_unavailable_after = self.config_entry.options.get(
+            CONF_UNAVAILABLE_AFTER_FAILURES, DEFAULT_UNAVAILABLE_AFTER_FAILURES
+        )
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_MAX_BACKOFF_MULTIPLIER,
+                    default=current_max_backoff,
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=64)),
+                vol.Optional(
+                    CONF_UNAVAILABLE_AFTER_FAILURES,
+                    default=current_unavailable_after,
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=options_schema,
+            description_placeholders={
+                "max_backoff_desc": f"Maximum back-off multiplier (1-64, default {DEFAULT_MAX_BACKOFF_MULTIPLIER})",
+                "unavailable_after_desc": f"Mark device unavailable after N failures (1-20, default {DEFAULT_UNAVAILABLE_AFTER_FAILURES})",
+            },
         )

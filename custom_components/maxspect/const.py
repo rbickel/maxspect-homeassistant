@@ -5,6 +5,12 @@ DOMAIN = "maxspect"
 DEFAULT_PORT = 12416
 DEFAULT_SCAN_INTERVAL = 30
 
+# ICV6 back-off and availability tracking
+CONF_MAX_BACKOFF_MULTIPLIER = "max_backoff_multiplier"
+CONF_UNAVAILABLE_AFTER_FAILURES = "unavailable_after"
+DEFAULT_MAX_BACKOFF_MULTIPLIER = 8
+DEFAULT_UNAVAILABLE_AFTER_FAILURES = 3
+
 # ---------------------------------------------------------------------------
 # ICV6 constants
 # ---------------------------------------------------------------------------
