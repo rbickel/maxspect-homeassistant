@@ -116,7 +116,7 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
     def _record_device_failure(self, device_id: str, now: float) -> None:
         """Record a device read failure and update back-off state."""
         if device_id in self._device_failures:
-            failure_count, _, was_unavailable = self._device_failures[device_id]
+            failure_count, _, _ = self._device_failures[device_id]
             failure_count += 1
         else:
             failure_count = 1
