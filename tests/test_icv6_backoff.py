@@ -92,9 +92,15 @@ class MockICV6Coordinator:
             self._device_failures[device_id] = (0, 0.0, False)
             return
 
-        failure_count, _, was_unavailable = self._device_failures[device_id]
+        failure_count, _, _ = self._device_failures[device_id]
         if failure_count > 0:
-            pass  # In real code: _LOGGER.info(...)
+            from custom_components.maxspect.icv6_coordinator import _LOGGER
+
+            _LOGGER.info(
+                "ICV6: device %s back online after %d consecutive failures",
+                device_id,
+                failure_count,
+            )
         self._device_failures[device_id] = (0, 0.0, False)
 
     def is_device_unavailable(self, device_id: str) -> bool:
