@@ -23,7 +23,8 @@ After consecutive failures, the polling interval progressively doubles up to a c
 | 0-2                 | 30s                     | 1×         |
 | 3-5                 | 60s                     | 2×         |
 | 6-10                | 120s                    | 4×         |
-| >10                 | 240s (max)              | 8×         |
+| 11-15               | 240s                    | 8×         |
+| 16+                 | Continues doubling      | 16×, 32×... |
 
 The maximum multiplier is user-configurable (default: 8, range: 1-64).
 
@@ -109,9 +110,12 @@ _device_failures: dict[str, tuple[int, float, bool]]
 ```python
 def _get_backoff_interval(failure_count: int) -> float:
     if failure_count <= 2:
-        return base_interval
-    tier = (failure_count - 3) // 3
-    multiplier = 2 ** (tier + 1)
+        multiplier = 1
+    elif failure_count <= 5:
+        multiplier = 2
+    else:
+        tier = (failure_count - 6) // 5
+        multiplier = 4 * (2 ** tier)
     multiplier = min(multiplier, max_backoff_multiplier)
     return base_interval * multiplier
 ```

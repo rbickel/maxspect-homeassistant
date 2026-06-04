@@ -61,10 +61,9 @@ class MockICV6Coordinator:
             multiplier = 1
         elif failure_count <= 5:
             multiplier = 2
-        elif failure_count <= 10:
-            multiplier = 4
         else:
-            multiplier = 8
+            tier = (failure_count - 6) // 5
+            multiplier = 4 * (2 ** tier)
         multiplier = min(multiplier, self._max_backoff_multiplier)
         return self._base_interval * multiplier
 
@@ -173,15 +172,13 @@ class TestBackoffIntervalCalculation:
 
     def test_custom_max_backoff_multiplier(self) -> None:
         coord = _coordinator(max_backoff=16)
-        # With the default tiers, >10 failures cap at 8×; max_backoff_multiplier=16 does not
-        # add new tiers, it only allows the cap to be higher if tiers were to grow. At
-        # failure_count=14 the tier is 8×, which is still below 16×, so result is 8×.
-        assert coord._get_backoff_interval(14) == 240.0  # 30 × 8
+        # 16 failures would normally give 16×
+        assert coord._get_backoff_interval(16) == 480.0  # 30 × 16
 
     def test_custom_max_backoff_multiplier_capped(self) -> None:
         coord = _coordinator(max_backoff=4)
-        # 9 failures would normally give 4× (tier 6-10), but our max is 4× anyway
-        assert coord._get_backoff_interval(9) == 120.0  # 30 × 4
+        # 11 failures would normally give 8×, but our max is 4×
+        assert coord._get_backoff_interval(11) == 120.0  # 30 × 4
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +404,7 @@ class TestFullFailureRecoveryCycle:
             next_attempt = last_attempt + expected_interval
             coord._record_device_failure(device_id, next_attempt)
 
-        # After 10 failures, backoff should be at 4× (120s) — still in the 6-10 tier
+        # After 10 failures, backoff should still be 4× (120s)
         assert coord._get_backoff_interval(10) == 120.0
 
         # Device is still unavailable

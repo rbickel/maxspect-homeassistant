@@ -37,18 +37,6 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
     """Coordinator that manages all ICV6 child devices.
 
     coordinator.data is a dict keyed by device_id → ICV6ChildDevice.
-
-    IMPORTANT: The ICV6 serial bus and its child devices (LED ramps, pumps)
-    have very limited resources.  Aggressive polling with the full
-    getAllData (0x14) command causes firmware instability — the device
-    becomes unresponsive and its stored schedule can get corrupted.
-
-    Strategy:
-      - Full device reads (0x14) are performed ONLY during discovery
-        cycles (every _REDISCOVER_INTERVAL seconds).
-      - Between discoveries the cached state is returned as-is.
-      - The schedule/manual channels rarely change (only through the
-        Maxspect app), so caching is safe.
     """
 
     config_entry: ConfigEntry
@@ -90,16 +78,15 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
           0-2 failures → 30s (1×)
           3-5 failures → 60s (2×)
           6-10 failures → 120s (4×)
-          >10 failures → 240s (8×, if max=8)
+          11-15 failures → 240s (8×, if max=8)
         """
         if failure_count <= 2:
             multiplier = 1
         elif failure_count <= 5:
             multiplier = 2
-        elif failure_count <= 10:
-            multiplier = 4
         else:
-            multiplier = 8
+            tier = (failure_count - 6) // 5
+            multiplier = 4 * (2 ** tier)
         multiplier = min(multiplier, self._max_backoff_multiplier)
         return self._base_interval * multiplier
 
@@ -166,55 +153,44 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
     # ------------------------------------------------------------------
 
     async def _async_update_data(self) -> dict[str, ICV6ChildDevice]:
-        """Fetch latest state; re-discover devices periodically.
-
-        Full device reads (getAllData 0x14) are ONLY performed during
-        discovery cycles to avoid stressing the ICV6 serial bus and
-        its child devices.  Between discoveries the cached state is
-        returned unchanged.
-        """
+        """Fetch latest state; re-discover devices periodically."""
         now = time.monotonic()
         needs_discovery = (
             not self.data
             or (now - self._last_discovery) >= _REDISCOVER_INTERVAL
         )
+        devices: dict[str, ICV6ChildDevice] = dict(self.data or {})
+        if needs_discovery:
+            _LOGGER.debug("ICV6 running device discovery for %s", self.host)
+            try:
+                discovered = await self.client.async_discover_devices()
+            except ICV6ConnectionError as err:
+                raise UpdateFailed(f"ICV6 discovery failed: {err}") from err
 
-        if not needs_discovery:
-            # Return cached state — no bus traffic
-            return dict(self.data)
-
-        _LOGGER.debug("ICV6 running device discovery for %s", self.host)
-        try:
-            discovered = await self.client.async_discover_devices()
-        except ICV6ConnectionError as err:
-            raise UpdateFailed(f"ICV6 discovery failed: {err}") from err
-
-        if not discovered and not self.data:
-            raise UpdateFailed(
-                f"No ICV6 devices found at {self.host}. "
-                "Ensure devices are connected and powered on."
-            )
-
-        current: dict[str, ICV6ChildDevice] = dict(self.data or {})
-        for dev in discovered:
-            if dev.device_id not in current:
-                _LOGGER.info(
-                    "ICV6: new child device found: %s (%s)",
-                    dev.device_id, dev.type_name,
+            if not discovered and not self.data:
+                raise UpdateFailed(
+                    f"No ICV6 devices found at {self.host}. "
+                    "Ensure devices are connected and powered on."
                 )
-                current[dev.device_id] = dev
-            else:
-                # Preserve runtime state but update discovery attrs
-                existing = current[dev.device_id]
-                existing.area = dev.area
-                existing.is_on = dev.is_on
-                existing.mode = dev.mode
-                existing.group_num = dev.group_num
 
-        self._last_discovery = now
-        devices = current
+            for dev in discovered:
+                if dev.device_id not in devices:
+                    _LOGGER.info(
+                        "ICV6: new child device found: %s (%s)",
+                        dev.device_id, dev.type_name,
+                    )
+                    devices[dev.device_id] = dev
+                else:
+                    # Preserve runtime state but update discovery attrs
+                    existing = devices[dev.device_id]
+                    existing.area = dev.area
+                    existing.is_on = dev.is_on
+                    existing.mode = dev.mode
+                    existing.group_num = dev.group_num
 
-        # Full device read — only during discovery cycles
+            self._last_discovery = now
+
+        # Full device read
         for device_id, dev in devices.items():
             if dev.num_channels == 0:
                 continue

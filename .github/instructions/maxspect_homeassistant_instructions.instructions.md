@@ -129,7 +129,8 @@ Users can configure via the integration's options flow (Settings → Integration
 | 0-2                  | 30s (1×)                             |
 | 3-5                  | 60s (2×)                             |
 | 6-10                 | 120s (4×)                            |
-| >10                  | 240s (8×, if max=8)                  |
+| 11-15                | 240s (8×, if max=8)                  |
+| 16+                  | Continues doubling (up to configured max) |
 
 ### Per-device failure tracking
 
