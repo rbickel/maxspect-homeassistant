@@ -73,6 +73,38 @@ Device (TCP push) → MaxspectClient._process_push()
 
 ---
 
+## ICV6 exponential back-off for unreachable devices
+
+**Symptom**: ICV6 child device (LED or pump) persistently unreachable — floods the log with warnings on every discovery cycle (every 300s).
+
+**Root cause**:
+- Device is powered off, in standby mode, disconnected from the ICV6 hub's serial bus, or otherwise unreachable
+- Without back-off, the coordinator polls the device on every discovery cycle regardless of how many failures occurred
+- This wastes CPU cycles and floods logs without any benefit
+
+**Fix in place** (`icv6_coordinator.py`):
+- `_device_failures` dict tracks consecutive failure count per device
+- `_device_last_attempt` dict tracks timestamp of last polling attempt per device
+- After `_BACKOFF_THRESHOLD` (3) consecutive failures, exponential back-off is enabled
+- Back-off interval: `_REDISCOVER_INTERVAL * min(2^(failures - threshold), _BACKOFF_MAX_MULTIPLIER)`
+  - First back-off: 300s * 2^1 = 600s (10 minutes)
+  - Second: 300s * 2^2 = 1200s (20 minutes)
+  - Third: 300s * 2^3 = 2400s (40 minutes)
+  - Capped at: 300s * 8 = 2400s maximum (40 minutes)
+- Device is not polled during back-off period unless interval has elapsed
+- On successful device response, failure counter is reset and normal polling resumes
+- Entities remain available with last known state during back-off (graceful degradation)
+
+**Logging behavior**:
+- First 2 failures: log warning with error details
+- At 3rd failure (threshold): log warning announcing back-off enabled
+- During back-off: no warnings (silent skip)
+- On recovery: log info message announcing resumption of normal polling
+
+**Do not reduce `_BACKOFF_THRESHOLD` below 2** — devices may legitimately fail 1-2 reads due to serial bus congestion. The threshold should allow for transient failures before enabling back-off.
+
+---
+
 ## LAN push types — how to tell them apart
 
 All pushes arrive as `CMD_DATA_RECV (0x0091)` frames. The payload starts with `action` + 6-byte `attr_flags`.
