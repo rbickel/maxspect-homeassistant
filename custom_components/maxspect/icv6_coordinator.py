@@ -233,8 +233,8 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
                     device_id, dev.proto_cmd, dev.num_channels
                 )
             except ICV6ConnectionError as err:
-                _LOGGER.warning("ICV6: failed to read %s: %s", device_id, err)
                 self._record_device_failure(device_id, now)
+                _LOGGER.debug("ICV6: failed to read %s: %s", device_id, err)
                 continue
 
             if state is None:
