@@ -355,17 +355,48 @@ class MockICV6Coordinator:
         self.data: dict[str, ICV6ChildDevice] = {}
         self._last_discovery: float = 0.0
         self._notifications: list[dict] = []
+        # Back-off tracking (mirrors actual coordinator)
+        self._device_failures: dict[str, int] = {}
+        self._device_last_attempt: dict[str, float] = {}
 
     def async_set_updated_data(self, data: dict) -> None:
         self.data = data
         self._notifications.append(dict(data))
 
+    def _should_poll_device(self, device_id: str, now: float) -> bool:
+        """Mirror ICV6Coordinator._should_poll_device for testing."""
+        from custom_components.maxspect.icv6_coordinator import (
+            _BACKOFF_THRESHOLD,
+            _BACKOFF_MAX_MULTIPLIER,
+            _REDISCOVER_INTERVAL,
+        )
+        failure_count = self._device_failures.get(device_id, 0)
+        if failure_count < _BACKOFF_THRESHOLD:
+            return True
+        backoff_exp = failure_count - _BACKOFF_THRESHOLD
+        multiplier = min(2 ** backoff_exp, _BACKOFF_MAX_MULTIPLIER)
+        backoff_interval = _REDISCOVER_INTERVAL * multiplier
+        last_attempt = self._device_last_attempt.get(device_id, 0.0)
+        return (now - last_attempt) >= backoff_interval
+
+    def _record_device_failure(self, device_id: str, now: float) -> None:
+        """Mirror ICV6Coordinator._record_device_failure for testing."""
+        self._device_failures[device_id] = self._device_failures.get(device_id, 0) + 1
+        self._device_last_attempt[device_id] = now
+
+    def _record_device_success(self, device_id: str) -> None:
+        """Mirror ICV6Coordinator._record_device_success for testing."""
+        self._device_failures.pop(device_id, None)
+        self._device_last_attempt.pop(device_id, None)
+
     async def _async_update_data(self) -> dict[str, ICV6ChildDevice]:
         """Mirrors ICV6Coordinator._async_update_data.
 
         Full device reads only happen during discovery cycles (not every poll).
+        Includes exponential back-off for unreachable devices.
         """
         from homeassistant.helpers.update_coordinator import UpdateFailed
+        from custom_components.maxspect.icv6_coordinator import _BACKOFF_THRESHOLD
 
         now = time.monotonic()
         needs_discovery = (
@@ -398,13 +429,29 @@ class MockICV6Coordinator:
         for device_id, dev in devices.items():
             if dev.num_channels == 0:
                 continue
-            state = await self.client.async_read_device(
-                device_id, dev.proto_cmd, dev.num_channels
-            )
-            if state:
-                dev.mode = state.get("mode", dev.mode)
-                dev.manual_channels = state.get("manual_channels", dev.manual_channels)
-                dev.schedule = state.get("schedule", dev.schedule)
+
+            # Implement exponential back-off
+            if not self._should_poll_device(device_id, now):
+                continue
+
+            try:
+                state = await self.client.async_read_device(
+                    device_id, dev.proto_cmd, dev.num_channels
+                )
+            except ICV6ConnectionError:
+                self._record_device_failure(device_id, now)
+                continue
+
+            if state is None:
+                self._record_device_failure(device_id, now)
+                continue
+
+            # Device successfully responded
+            self._record_device_success(device_id)
+
+            dev.mode = state.get("mode", dev.mode)
+            dev.manual_channels = state.get("manual_channels", dev.manual_channels)
+            dev.schedule = state.get("schedule", dev.schedule)
 
         return devices
 
@@ -619,6 +666,164 @@ class TestICV6CoordinatorPolling:
         c.client.async_read_device.assert_awaited_once_with(
             "R5S2A001602", expected_cmd, 4
         )
+
+
+# ── Exponential back-off for unreachable devices ──────────────────────────────
+
+class TestICV6CoordinatorBackoff:
+    """Test exponential back-off for persistently unreachable devices."""
+
+    async def test_first_failure_logs_warning(self) -> None:
+        """First failure logs a warning with device details."""
+        from custom_components.maxspect.icv6_coordinator import _BACKOFF_THRESHOLD
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+        c._last_discovery = time.monotonic() - 301
+        c.client.async_discover_devices.return_value = []
+        c.client.async_read_device.return_value = None  # device unreachable
+
+        await c._async_update_data()
+
+        assert c._device_failures.get("R5S2A001602") == 1
+        assert "R5S2A001602" in c._device_last_attempt
+
+    async def test_consecutive_failures_increment_counter(self) -> None:
+        """Consecutive failures increment the failure counter."""
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+        c.client.async_discover_devices.return_value = []
+        c.client.async_read_device.return_value = None
+
+        # Simulate 3 consecutive failures
+        for i in range(3):
+            c._last_discovery = time.monotonic() - 301
+            await c._async_update_data()
+            assert c._device_failures.get("R5S2A001602") == i + 1
+
+    async def test_backoff_enabled_after_threshold(self) -> None:
+        """After threshold failures, back-off is enabled and polling is skipped."""
+        from custom_components.maxspect.icv6_coordinator import (
+            _BACKOFF_THRESHOLD,
+            _REDISCOVER_INTERVAL,
+        )
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+        c.client.async_discover_devices.return_value = []
+        c.client.async_read_device.return_value = None
+
+        # Reach threshold
+        for _ in range(_BACKOFF_THRESHOLD):
+            c._last_discovery = time.monotonic() - 301
+            await c._async_update_data()
+
+        # Reset mock to verify next call is skipped
+        c.client.async_read_device.reset_mock()
+
+        # Next discovery cycle — device should be skipped (in back-off)
+        c._last_discovery = time.monotonic() - 301
+        now = time.monotonic()
+        c._device_last_attempt["R5S2A001602"] = now - 100  # recent attempt
+
+        await c._async_update_data()
+
+        # Device should not be polled during back-off
+        c.client.async_read_device.assert_not_awaited()
+
+    async def test_backoff_interval_doubles_with_failures(self) -> None:
+        """Back-off interval doubles with each additional failure."""
+        from custom_components.maxspect.icv6_coordinator import (
+            _BACKOFF_THRESHOLD,
+            _REDISCOVER_INTERVAL,
+        )
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+
+        # Set failure count to threshold + 1
+        c._device_failures["R5S2A001602"] = _BACKOFF_THRESHOLD + 1
+        now = time.monotonic()
+
+        # First back-off: 300s * 2^1 = 600s
+        c._device_last_attempt["R5S2A001602"] = now - 400
+        assert not c._should_poll_device("R5S2A001602", now)
+
+        # After 600s, should poll again
+        c._device_last_attempt["R5S2A001602"] = now - 601
+        assert c._should_poll_device("R5S2A001602", now)
+
+    async def test_backoff_recovery_resets_counter(self) -> None:
+        """Successful poll after back-off resets failure counter."""
+        from custom_components.maxspect.icv6_coordinator import _BACKOFF_THRESHOLD
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+        c.client.async_discover_devices.return_value = []
+
+        # Build up failures
+        c.client.async_read_device.return_value = None
+        for _ in range(_BACKOFF_THRESHOLD):
+            c._last_discovery = time.monotonic() - 301
+            await c._async_update_data()
+
+        assert c._device_failures.get("R5S2A001602") == _BACKOFF_THRESHOLD
+
+        # Device recovers
+        c.client.async_read_device.return_value = {
+            "mode": 0,
+            "manual_channels": [50, 50, 50, 50],
+            "schedule": [],
+        }
+        # Simulate time passing to exit back-off
+        c._device_last_attempt["R5S2A001602"] = time.monotonic() - 10000
+        c._last_discovery = time.monotonic() - 301
+
+        await c._async_update_data()
+
+        # Failure counter should be reset
+        assert c._device_failures.get("R5S2A001602") is None
+        assert c._device_last_attempt.get("R5S2A001602") is None
+
+    async def test_connection_error_triggers_backoff(self) -> None:
+        """ICV6ConnectionError also triggers back-off tracking."""
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+        c._last_discovery = time.monotonic() - 301
+        c.client.async_discover_devices.return_value = []
+        c.client.async_read_device.side_effect = ICV6ConnectionError("connection failed")
+
+        await c._async_update_data()
+
+        assert c._device_failures.get("R5S2A001602") == 1
+
+    async def test_backoff_max_multiplier_caps_interval(self) -> None:
+        """Back-off interval is capped at max multiplier."""
+        from custom_components.maxspect.icv6_coordinator import (
+            _BACKOFF_THRESHOLD,
+            _BACKOFF_MAX_MULTIPLIER,
+            _REDISCOVER_INTERVAL,
+        )
+        c = _mock_coordinator()
+        dev = _led_device("R5S2A001602")
+        c.data = {"R5S2A001602": dev}
+
+        # Set very high failure count
+        c._device_failures["R5S2A001602"] = _BACKOFF_THRESHOLD + 10
+        now = time.monotonic()
+
+        # Max interval should be capped at 300 * 8 = 2400s
+        max_interval = _REDISCOVER_INTERVAL * _BACKOFF_MAX_MULTIPLIER
+
+        # Just under max interval — should not poll
+        c._device_last_attempt["R5S2A001602"] = now - (max_interval - 1)
+        assert not c._should_poll_device("R5S2A001602", now)
+
+        # At max interval — should poll
+        c._device_last_attempt["R5S2A001602"] = now - max_interval
+        assert c._should_poll_device("R5S2A001602", now)
 
 
 # ── Power control ─────────────────────────────────────────────────────────────

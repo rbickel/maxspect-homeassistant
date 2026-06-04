@@ -25,6 +25,10 @@ _LOGGER = logging.getLogger(__name__)
 # Between discovery cycles only device state (mode/channels) is polled.
 _REDISCOVER_INTERVAL = 300.0
 
+# Exponential back-off configuration for unreachable devices
+_BACKOFF_THRESHOLD = 3  # Number of consecutive failures before enabling back-off
+_BACKOFF_MAX_MULTIPLIER = 8  # Maximum back-off multiplier (8x discovery interval)
+
 
 class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
     """Coordinator that manages all ICV6 child devices.
@@ -42,6 +46,8 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
       - Between discoveries the cached state is returned as-is.
       - The schedule/manual channels rarely change (only through the
         Maxspect app), so caching is safe.
+      - Devices that are persistently unreachable trigger exponential
+        back-off to reduce log spam and unnecessary polling.
     """
 
     config_entry: ConfigEntry
@@ -58,6 +64,10 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
         self.port: int = entry.data.get(CONF_PORT, ICV6_TCP_PORT)
         self.client = ICV6Client(self.host, self.port)
         self._last_discovery: float = 0.0
+        # Track consecutive failures per device for exponential back-off
+        self._device_failures: dict[str, int] = {}
+        # Track when each device was last attempted
+        self._device_last_attempt: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # DataUpdateCoordinator interface
@@ -116,26 +126,105 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
         for device_id, dev in devices.items():
             if dev.num_channels == 0:
                 continue
+
+            # Implement exponential back-off for persistently unreachable devices
+            if not self._should_poll_device(device_id, now):
+                continue
+
             try:
                 state = await self.client.async_read_device(
                     device_id, dev.proto_cmd, dev.num_channels
                 )
             except ICV6ConnectionError as err:
-                _LOGGER.warning("ICV6: failed to read %s: %s", device_id, err)
+                self._record_device_failure(device_id, now)
+                failure_count = self._device_failures.get(device_id, 0)
+                if failure_count == _BACKOFF_THRESHOLD:
+                    _LOGGER.warning(
+                        "ICV6: device %s unreachable after %d attempts, "
+                        "enabling exponential back-off to reduce polling frequency",
+                        device_id, failure_count,
+                    )
+                elif failure_count < _BACKOFF_THRESHOLD:
+                    _LOGGER.warning("ICV6: failed to read %s: %s", device_id, err)
                 continue
 
             if state is None:
-                _LOGGER.warning(
-                    "ICV6: no data returned from %s — device may be off or unreachable",
-                    device_id,
-                )
+                self._record_device_failure(device_id, now)
+                failure_count = self._device_failures.get(device_id, 0)
+                if failure_count == _BACKOFF_THRESHOLD:
+                    _LOGGER.warning(
+                        "ICV6: device %s unreachable (no data) after %d attempts, "
+                        "enabling exponential back-off to reduce polling frequency",
+                        device_id, failure_count,
+                    )
+                elif failure_count < _BACKOFF_THRESHOLD:
+                    _LOGGER.warning(
+                        "ICV6: no data returned from %s — device may be off or unreachable",
+                        device_id,
+                    )
                 continue
+
+            # Device successfully responded — reset failure tracking
+            self._record_device_success(device_id)
 
             dev.mode = state.get("mode", dev.mode)
             dev.manual_channels = state.get("manual_channels", dev.manual_channels)
             dev.schedule = state.get("schedule", dev.schedule)
 
         return devices
+
+    # ------------------------------------------------------------------
+    # Exponential back-off helpers
+    # ------------------------------------------------------------------
+
+    def _should_poll_device(self, device_id: str, now: float) -> bool:
+        """Check if device should be polled based on back-off state.
+
+        Returns True if device should be polled, False if in back-off period.
+        """
+        failure_count = self._device_failures.get(device_id, 0)
+
+        # No failures or below threshold — poll normally
+        if failure_count < _BACKOFF_THRESHOLD:
+            return True
+
+        # Calculate back-off interval using exponential strategy
+        # Base interval is _REDISCOVER_INTERVAL (300s)
+        # Back-off multiplier: min(2^(failures - threshold), max_multiplier)
+        backoff_exp = failure_count - _BACKOFF_THRESHOLD
+        multiplier = min(2 ** backoff_exp, _BACKOFF_MAX_MULTIPLIER)
+        backoff_interval = _REDISCOVER_INTERVAL * multiplier
+
+        last_attempt = self._device_last_attempt.get(device_id, 0.0)
+        time_since_attempt = now - last_attempt
+
+        if time_since_attempt >= backoff_interval:
+            _LOGGER.debug(
+                "ICV6: retrying device %s after %d s back-off (failure count: %d)",
+                device_id, int(backoff_interval), failure_count,
+            )
+            return True
+
+        return False
+
+    def _record_device_failure(self, device_id: str, now: float) -> None:
+        """Record a device polling failure for back-off tracking."""
+        self._device_failures[device_id] = self._device_failures.get(device_id, 0) + 1
+        self._device_last_attempt[device_id] = now
+
+    def _record_device_success(self, device_id: str) -> None:
+        """Record successful device polling and reset back-off state."""
+        previous_failures = self._device_failures.get(device_id, 0)
+        if previous_failures >= _BACKOFF_THRESHOLD:
+            _LOGGER.info(
+                "ICV6: device %s recovered after %d failures, "
+                "resuming normal polling frequency",
+                device_id, previous_failures,
+            )
+
+        # Reset failure tracking
+        self._device_failures.pop(device_id, None)
+        self._device_last_attempt.pop(device_id, None)
 
     # ------------------------------------------------------------------
     # Control helpers
