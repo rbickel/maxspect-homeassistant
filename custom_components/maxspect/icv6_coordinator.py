@@ -93,10 +93,13 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
           >10 failures → 240s (8×, if max=8)
         """
         if failure_count <= 2:
-            return self._base_interval
-        # Calculate multiplier: 2^(tier) where tier = (failures - 3) // 3
-        tier = (failure_count - 3) // 3
-        multiplier = 2 ** (tier + 1)
+            multiplier = 1
+        elif failure_count <= 5:
+            multiplier = 2
+        elif failure_count <= 10:
+            multiplier = 4
+        else:
+            multiplier = 8
         multiplier = min(multiplier, self._max_backoff_multiplier)
         return self._base_interval * multiplier
 
