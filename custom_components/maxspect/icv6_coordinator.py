@@ -120,7 +120,6 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
             failure_count += 1
         else:
             failure_count = 1
-            was_unavailable = False
 
         # Check if we just crossed the unavailability threshold
         is_unavailable = failure_count >= self._unavailable_after
@@ -147,6 +146,7 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
             return
 
         failure_count, _, _ = self._device_failures[device_id]
+        if failure_count > 0:
             _LOGGER.info(
                 "ICV6: device %s back online after %d consecutive failures",
                 device_id, failure_count,

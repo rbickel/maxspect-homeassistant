@@ -58,9 +58,13 @@ class MockICV6Coordinator:
     def _get_backoff_interval(self, failure_count: int) -> float:
         """Calculate effective poll interval based on consecutive failures."""
         if failure_count <= 2:
-            return self._base_interval
-        tier = (failure_count - 3) // 3
-        multiplier = 2 ** (tier + 1)
+            multiplier = 1
+        elif failure_count <= 5:
+            multiplier = 2
+        elif failure_count <= 10:
+            multiplier = 4
+        else:
+            multiplier = 8
         multiplier = min(multiplier, self._max_backoff_multiplier)
         return self._base_interval * multiplier
 
@@ -77,11 +81,10 @@ class MockICV6Coordinator:
     def _record_device_failure(self, device_id: str, now: float) -> None:
         """Record a device read failure and update back-off state."""
         if device_id in self._device_failures:
-            failure_count, _, was_unavailable = self._device_failures[device_id]
+            failure_count, _, _ = self._device_failures[device_id]
             failure_count += 1
         else:
             failure_count = 1
-            was_unavailable = False
 
         is_unavailable = failure_count >= self._unavailable_after
         self._device_failures[device_id] = (failure_count, now, is_unavailable)
@@ -170,12 +173,14 @@ class TestBackoffIntervalCalculation:
 
     def test_custom_max_backoff_multiplier(self) -> None:
         coord = _coordinator(max_backoff=16)
-        # 14 failures would normally give 2^4 = 16×, but our max is 16×
-        assert coord._get_backoff_interval(14) == 480.0  # 30 × 16
+        # With the default tiers, >10 failures cap at 8×; max_backoff_multiplier=16 does not
+        # add new tiers, it only allows the cap to be higher if tiers were to grow. At
+        # failure_count=14 the tier is 8×, which is still below 16×, so result is 8×.
+        assert coord._get_backoff_interval(14) == 240.0  # 30 × 8
 
     def test_custom_max_backoff_multiplier_capped(self) -> None:
         coord = _coordinator(max_backoff=4)
-        # 9 failures would normally give 8×, but our max is 4×
+        # 9 failures would normally give 4× (tier 6-10), but our max is 4× anyway
         assert coord._get_backoff_interval(9) == 120.0  # 30 × 4
 
 
@@ -402,8 +407,8 @@ class TestFullFailureRecoveryCycle:
             next_attempt = last_attempt + expected_interval
             coord._record_device_failure(device_id, next_attempt)
 
-        # After 10 failures, backoff should be capped at 8× (240s)
-        assert coord._get_backoff_interval(10) == 240.0
+        # After 10 failures, backoff should be at 4× (120s) — still in the 6-10 tier
+        assert coord._get_backoff_interval(10) == 120.0
 
         # Device is still unavailable
         assert coord.is_device_unavailable(device_id) is True
