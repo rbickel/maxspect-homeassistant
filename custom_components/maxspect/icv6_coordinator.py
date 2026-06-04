@@ -146,8 +146,7 @@ class ICV6Coordinator(DataUpdateCoordinator[dict[str, ICV6ChildDevice]]):
             self._device_failures[device_id] = (0, 0.0, False)
             return
 
-        failure_count, _, was_unavailable = self._device_failures[device_id]
-        if failure_count > 0:
+        failure_count, _, _ = self._device_failures[device_id]
             _LOGGER.info(
                 "ICV6: device %s back online after %d consecutive failures",
                 device_id, failure_count,
