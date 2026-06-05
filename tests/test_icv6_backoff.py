@@ -20,6 +20,7 @@ from custom_components.maxspect.const import (
     DEFAULT_UNAVAILABLE_AFTER_FAILURES,
 )
 from custom_components.maxspect.icv6_api import ICV6ChildDevice, ICV6_DEVICE_TYPES
+from custom_components.maxspect.icv6_coordinator import ICV6Coordinator
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,19 @@ def _coordinator(
     return MockICV6Coordinator(max_backoff, unavailable_after)
 
 
+def _real_coordinator(
+    max_backoff: int = DEFAULT_MAX_BACKOFF_MULTIPLIER,
+    unavailable_after: int = DEFAULT_UNAVAILABLE_AFTER_FAILURES,
+) -> ICV6Coordinator:
+    """Create an ICV6Coordinator instance for testing helper methods."""
+    coord = ICV6Coordinator.__new__(ICV6Coordinator)
+    coord._max_backoff_multiplier = max_backoff
+    coord._unavailable_after = unavailable_after
+    coord._base_interval = 30.0
+    coord._device_failures = {}
+    return coord
+
+
 # ---------------------------------------------------------------------------
 # Section 1 — Back-off interval calculation
 # ---------------------------------------------------------------------------
@@ -179,6 +193,24 @@ class TestBackoffIntervalCalculation:
         coord = _coordinator(max_backoff=4)
         # 11 failures would normally give 8×, but our max is 4×
         assert coord._get_backoff_interval(11) == 120.0  # 30 × 4
+
+
+class TestRealCoordinatorHelpers:
+    """Test that coordinator helper methods are exercised on the real coordinator."""
+
+    def test_real_helper_failure_and_recovery_cycle(self) -> None:
+        coord = _real_coordinator(unavailable_after=3)
+        device_id = "R5S2A001602"
+
+        coord._record_device_failure(device_id, 100.0)
+        coord._record_device_failure(device_id, 130.0)
+        coord._record_device_failure(device_id, 190.0)
+
+        assert coord._get_backoff_interval(3) == 60.0
+        assert coord.is_device_unavailable(device_id) is True
+
+        coord._record_device_success(device_id)
+        assert coord.is_device_unavailable(device_id) is False
 
 
 # ---------------------------------------------------------------------------
