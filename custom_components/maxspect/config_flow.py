@@ -280,11 +280,11 @@ class MaxspectOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_MAX_BACKOFF_MULTIPLIER,
                     default=current_max_backoff,
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=64)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=8)),
                 vol.Optional(
                     CONF_UNAVAILABLE_AFTER_FAILURES,
                     default=current_unavailable_after,
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20))
             }
         )
 
