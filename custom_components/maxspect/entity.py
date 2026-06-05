@@ -86,8 +86,9 @@ class ICV6Entity(CoordinatorEntity["_ICV6Coordinator"]):
 
     @property
     def available(self) -> bool:
-        """Mark unavailable if the coordinator failed or the device is gone."""
+        """Mark unavailable if the coordinator failed, the device is gone, or has consecutive failures."""
         return (
             super().available
             and self._device_id in self.coordinator.data
+            and not self.coordinator.is_device_unavailable(self._device_id)
         )

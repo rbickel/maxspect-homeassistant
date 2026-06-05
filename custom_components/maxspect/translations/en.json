@@ -43,6 +43,20 @@
       "already_configured": "This device is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ICV6 options",
+        "data": {
+          "max_backoff_multiplier": "Maximum back-off multiplier",
+          "unavailable_after": "Mark unavailable after N consecutive failures"
+        }
+      }
+    },
+    "abort": {
+      "not_icv6": "Options are only available for ICV6 devices."
+    }
+  },
   "entity": {
     "switch": {
       "pump_power": { "name": "Pump power" },

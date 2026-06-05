@@ -109,6 +109,61 @@ The state-notify debug log must print `hw_power=bool(data[0] & 1)`, not `self._s
 
 ---
 
+## ICV6 exponential back-off and availability tracking
+
+The ICV6Coordinator implements exponential back-off and availability tracking for unreachable devices to reduce log spam and properly signal unavailability to Home Assistant.
+
+### Configuration options
+
+- `max_backoff_multiplier`: Maximum back-off multiplier (default: 8, range: 1-8)
+  - Base interval × max_backoff_multiplier = maximum poll interval
+  - Example: 30s × 8 = 240s (4 minutes) max back-off
+
+### Back-off intervals
+
+| Consecutive failures | Effective poll interval (base = 30s) |
+|----------------------|--------------------------------------|
+| 0-2                  | 30s (1×)                             |
+| 3-5                  | 60s (2×)                             |
+| 6-10                 | 120s (4×)                            |
+| 11-15                | 240s (8×, if max=8)                  |
+| 16+                  | Continues doubling (up to configured max) |
+
+### Per-device failure tracking
+
+The coordinator maintains `_device_failures: dict[str, tuple[int, float, bool]]` where:
+- Key: `device_id`
+- Value: `(failure_count, last_attempt_time, is_unavailable)`
+
+### Smart logging behavior
+
+- **First failure** → `WARNING`: "ICV6: no data returned from {device_id} — device may be off or unreachable"
+- **Subsequent failures** → `DEBUG`: "ICV6: no data from {device_id} (failure {count}, backing off to {interval} s)"
+- **Recovery** → `INFO`: "ICV6: device {device_id} back online after {count} consecutive failures"
+
+### Availability reporting
+
+After N consecutive failures (default 3):
+- `ICV6Coordinator.is_device_unavailable(device_id)` returns `True`
+- All entities for that device report `available = False` in Home Assistant
+- UI shows device as unavailable, automations can react
+
+Recovery on first successful poll:
+- Resets failure counter to 0
+- Restores `available = True` immediately
+- Logs recovery at INFO level with failure count
+
+### Testing
+
+`tests/test_icv6_backoff.py` covers:
+- Back-off interval calculation (exponential growth, ceiling enforcement)
+- Failure tracking and timestamp recording
+- Availability transitions at threshold
+- Polling skip logic based on back-off intervals
+- Full failure/recovery cycle integration test
+
+---
+
 ## Testing
 
 Run tests:
@@ -128,6 +183,8 @@ pip install pytest pytest-asyncio
 |---|---|
 | `tests/test_api_parsing.py` | Pure parsing functions — no HA dependency |
 | `tests/test_coordinator_behaviour.py` | Race-condition demonstration + write-cooldown fix |
+| `tests/test_icv6.py` | ICV6 protocol, coordinator, and entity behavior |
+| `tests/test_icv6_backoff.py` | Exponential back-off and availability tracking logic |
 
 ### Test invariants to maintain
 

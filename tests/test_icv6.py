@@ -89,6 +89,7 @@ def _coordinator(
     coord.data = devices or {}
     coord.host = host
     coord.last_update_success = True
+    coord.is_device_unavailable.return_value = False
     return coord
 
 
