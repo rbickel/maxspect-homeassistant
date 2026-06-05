@@ -115,12 +115,9 @@ The ICV6Coordinator implements exponential back-off and availability tracking fo
 
 ### Configuration options
 
-Users can configure via the integration's options flow (Settings → Integrations → Maxspect ICV6 → Configure):
-
-- `max_backoff_multiplier`: Maximum back-off multiplier (default: 8, range: 1-64)
+- `max_backoff_multiplier`: Maximum back-off multiplier (default: 8, range: 1-8)
   - Base interval × max_backoff_multiplier = maximum poll interval
   - Example: 30s × 8 = 240s (4 minutes) max back-off
-- `unavailable_after`: Mark device unavailable after N consecutive failures (default: 3, range: 1-20)
 
 ### Back-off intervals
 
