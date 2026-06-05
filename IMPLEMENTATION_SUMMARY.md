@@ -62,9 +62,7 @@ Log verbosity reduces to prevent spam:
 
 ### 4. User Configuration
 
-Added options flow for ICV6 devices (Settings → Integrations → Maxspect ICV6 → Configure):
-
-- `max_backoff_multiplier`: Maximum back-off multiplier (1-64, default: 8)
+- `max_backoff_multiplier`: Maximum back-off multiplier (1-8, default: 8)
 - `unavailable_after`: Failures before marking unavailable (1-20, default: 3)
 
 ## Files Modified
