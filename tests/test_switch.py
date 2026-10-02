@@ -34,6 +34,15 @@ from .conftest import build_bak24_hex, build_time_hex, setup_integration
 SWITCH_ENTITY = "switch.maxspect_my_gyre_pump_power"
 
 
+@pytest.fixture
+def gyre_config_entry(gyre_config_entry: MockConfigEntry) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=gyre_config_entry.domain, data=dict(gyre_config_entry.data),
+        unique_id=gyre_config_entry.unique_id, title=gyre_config_entry.title,
+        options={"local_control": False},
+    )
+
+
 class TestGyrePowerSwitch:
 
     async def test_switch_state_on(

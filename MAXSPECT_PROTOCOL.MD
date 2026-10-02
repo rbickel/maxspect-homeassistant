@@ -16,8 +16,34 @@
 >
 > **Last verified**: 2026-10-02 — a controlled live capture reproduced physical
 > pump-profile changes during nominal LAN reads (§10.4). The integration now
-> uses push-only monitoring. Earlier polling measurements are historical and
-> do not establish safety.
+> uses corrected-opcode LAN push/pull monitoring and confirmed local controls
+> by default, with cloud fallback. Earlier measurements using `0x11` were
+> write traffic, despite being labeled reads.
+
+## Current protocol and capabilities
+
+XF330CE and XF350CE share the same 47-field schema and controller-wide Mode
+DP 18. The implementation does not gate operations by pump model.
+
+| Action | Byte | Current use |
+|--------|------|-------------|
+| Write | `0x11` | Deliberate Mode-only on/off, feeding, and resume commands |
+| Read | `0x12` | Timestamp every 3 s; all defined settings every 60 s |
+| Read response | `0x13` | Decoded using the same schema as pushes |
+| Autonomous report | `0x14` | Partial or full controller updates |
+
+All reports contain a six-byte selection mask, packed selected boolean values,
+then selected non-boolean values in schema order. There is no separate
+fixed-offset full-status parser. Partial reports preserve previously received
+fields. Valid model identities are initialized independently for A and B.
+
+LAN mode writes require a matching fresh mode-bearing report. On and Exit Feed
+can finish in Manual (`0`), Programming (`1`), or On (`5`). A timestamp-only
+report cannot confirm a command. Cloud control is a fallback on LAN failure;
+healthy Gyre LAN status does not cause routine cloud reads.
+
+The remaining sections preserve historical captures. Examples labeling
+`0x11` as a read or `0x12` as a write must not be copied into current clients.
 
 ---
 
@@ -129,10 +155,9 @@ the 4-byte ID in the 0x0094 response.
 
 > **Safety correction (2026-10-02):** The current integration's LAN read
 > sequence reproduced a physical change of both pump profiles from XF330CE
-> to XF350CE. Successful read responses do not establish that polling is
-> side-effect-free. The timings below are historical measurements, not a
-> recommendation to enable active polling. See §10.4 for the captured evidence
-> and the remaining causal uncertainty.
+> to XF350CE. Its `0x11` packets were actually writes, not reads. The timings
+> below describe those historical packets, not the corrected `0x12` reader.
+> See §10.4 for the captured evidence and remaining firmware uncertainty.
 
 The 0x0090 command with action byte `0x11` acts as an **attribute read
 request**. The device responds with a 0x0091 push containing the requested
@@ -439,10 +464,10 @@ The full 12 bytes (including length prefix) are echoed back as the
 
 ## 8. Writing and Reading Attributes (0x0090)
 
-### 8.1 Reading Attributes (action=0x11)
+### 8.1 Historical Mislabeled Reads (0x11 Is Actually Write)
 
-The 0x0090 command with action byte `0x11` reads device data segments.
-See §3.4 for full details. Summary:
+These archived examples incorrectly called `0x11` a read. Current clients
+must use `0x12` instead; do not reproduce the following packets.
 
 ```
 Client ──► 0x0090 [0x11 0x14 mask_b1 mask_b2 mask_b3 mask_b4 mask_b5] ──►
@@ -669,12 +694,12 @@ uncharted and all 8 bits were tested for the first time.
 
 ### 10.3 Rules for Future Protocol Work
 
-1. **NEVER blind-sweep unknown mask bits** — even with action `0x11` (read)
+1. **NEVER blind-sweep unknown mask bits**. `0x11` is a write, not a read.
 2. **NEVER create fresh connections for each probe** — use a single
    persistent connection. Rapid bind flooding (24+) can evict the app's
    binding and potentially crash the device's WiFi module
-3. **Keep automatic LAN attribute queries disabled**. Historical response
-   success is not evidence that a mask is safe.
+3. **Only issue reads with `0x12` and the defined schema mask**. Historical
+   responses to malformed `0x11` writes do not establish read safety.
 4. **New-mask tests require explicit approval and dedicated hardware**
    that can be reset, not a production aquarium.
 5. **Always confirm device is still accessible in the app** after any
@@ -684,8 +709,10 @@ uncharted and all 8 bits were tested for the first time.
 
 A controlled local test used the unchanged integration client at commit
 `1504392`, with outgoing traffic gated and logged. The Home Assistant
-integration was disabled. No cloud calls, LAN write actions (`0x12`), new
-mask experiments, or automatic reconnects were used.
+integration was disabled. No cloud calls, packets labeled as writes by the old
+client (`0x12`), new mask experiments, or automatic reconnects were used.
+The later opcode correction established that the transmitted `0x11` packets
+were actually malformed writes without attribute values.
 
 | Phase | Attribute requests actually sent | Observation |
 |-------|----------------------------------|-------------|
@@ -708,8 +735,8 @@ profiles to XF330CE. The Syna-G app was kept closed during this second trial.
 
 **What this establishes:** A real controller-side profile change occurred
 during the integration's nominal-read sequence, not merely a Home Assistant
-display change. Neither cloud mode writes nor an explicit model-write action
-was sent by the diagnostic.
+display change. No cloud mode commands or intentional model-value writes were
+sent, but the wrongly labeled queries themselves used the device's write opcode.
 
 **What remains uncertain:** The earlier config query preceded the first
 timestamp read by about seven minutes, without resetting the controller between
@@ -723,21 +750,21 @@ offline:
 
 - An autonomous 1049-byte full-status report during the no-read baseline was
   treated as compact telemetry and scalar config. Cached models became
-  `36/1`, mode became `0`, and channel A RPM became `36`; the documented
-  full-status offsets instead give mode `5` and RPM `2715`.
+  `36/1`, mode became `0`, and channel A RPM became `36`. Schema-based replay
+  correctly gives Mode `1`, models `0/0`, firmware byte `36`, feeding duration
+  `40`, and RPM `2715`. The historical fixed offset for Mode was not authoritative.
 - The isolated config reply's data `5a 1a 0a 02` was interpreted as feed
   duration `90`, models `26/10`, and wash reminder `2`. Those are not valid
   model codes; the last three bytes match the capture date. The firmware
   layout for this query is therefore not validated by the existing DP table.
   Mapping every nonzero model value to XF350CE further disguises this error.
 
-**Current implementation:** Both automatic LAN attribute-query types have
-been removed. Monitoring retains the persistent push listener and heartbeats;
-explicit user controls remain on the cloud path. Full status is recognized
-before compact telemetry and parsed using its verified fixed memory map,
-without interpreting its header as scalar config. Scalar model values outside
-`0/1` are logged and ignored, and valid reports differing from the initialized
-cache are logged without changing that cache.
+**Current implementation:** Corrected `0x12` reads, `0x13` responses and all
+47 schema fields are supported alongside pushes and heartbeats. Confirmed
+Mode-only LAN writes are the default, with cloud fallback. Model values
+outside `0/1` are logged and ignored; valid reports differing from the
+initialized cache are logged. The source fixes and broader features were
+ported from PR #22 while retaining these validation safeguards.
 
 Freezing the local model fields is not a controller safeguard. Do not change
 the query prefix or sweep masks as an untested workaround.
@@ -746,7 +773,7 @@ the query prefix or sweep masks as an untested workaround.
 
 ## 11. Integration Architecture
 
-### 11.1 Push-Only LAN Listener Flow (`api.py`)
+### 11.1 LAN-First Push/Pull Listener Flow (`api.py`)
 
 ```
 MaxspectClient
@@ -758,16 +785,14 @@ MaxspectClient
   │
   ├── _listen_loop() [background task]
   │     ├── Read frames continuously
-  │     ├── Process 0x0091 pushes → update self._state
-  │     │     ├── 14 ff ff ff ff → _parse_full_status() (1044 B)
-  │     │     ├── 14 10          → _parse_compact_telemetry() (25 B)
-  │     │     ├── 14 00 04       → _parse_state_notify() (7 B)
-  │     │     └── scalar DPs     → mode/config updates
-  │     ├── Never send automatic 0x0090 attribute requests
+  │     ├── Decode 0x14 pushes and 0x13 read responses using all 47 DPs
+  │     ├── Decode sequenced 0x0094 responses after their request ID
+  │     ├── Poll Time using 0x12 every 3 s
+  │     ├── Request all defined fields using 0x12 every 60 s
   │     ├── Send heartbeats every 20-30s
   │     └── Notify coordinator via callback on each state update
   │
-  └── async_request_status() → return latest self._state
+  └── async_request_status() → require LAN mode/liveness; cloud fallback on failure
 ```
 
 ### 11.2 Model File
@@ -800,10 +825,11 @@ async_step_manual_device()  → IP + device type dropdown + optional name
 | Binding key format | ✅ Confirmed | 12 B: len(2) + "CATDCLOVTE"(10) |
 | Heartbeat | ✅ Confirmed | 0x000C → 0x000D, every 20-30s |
 | 0x0093 status request | ✅ Confirmed useless | Only echoes request ID via 0x0094 |
-| 0x0090 attr read (0x11) | ⚠️ Disabled | Historical responses do not establish safety; no automatic attribute requests remain |
-| 0x0090 state notify poll | ⚠️ Disabled | Historical responses succeeded; physical profile changes reproduced during nominal reads (§10.4) |
-| 0x0090 full status read | ⚠️ Disabled | Historical one-shot response; current integration waits for autonomous full status |
-| LAN write via 0x0090 | ⚠️ Format discovered | APK reveals Mode=3(OFF)/5(ON) via attr_flags; binary format derived but untested |
+| Legacy nominal read (0x11) | ⚠️ Unsafe write | Reversed opcode caused malformed writes; never use these as reads |
+| 0x0090 read (0x12) | Implemented/tested offline | Corrected periodic reads; only defined schema bits selected |
+| 0x0090 state notify poll | Implemented | Every 3 s; timestamp alone does not confirm a mode command |
+| Full settings read | Implemented | Every 60 s; partial responses do not guarantee a fresh schedule |
+| LAN Mode write (0x11) | Confirmed-report protocol | Mode-only frames; feeding/resume hardware verification reported in PR #22 |
 | Power ON/OFF via app | ✅ Observed | Mode=5=ON, Mode=3=OFF (from APK product definition) |
 | MinSpeed / MaxSpeed write | ❌ Not tested | App sends via Manual data point (ID 35, 62B binary) |
 | Mode selection write | ⚠️ Partially | Mode values: 0=waterflow, 1=programming, 2=feed, 3=off, 4=exit_feed, 5=on |

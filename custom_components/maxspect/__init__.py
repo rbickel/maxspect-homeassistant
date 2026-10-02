@@ -7,9 +7,8 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from .api import MaxspectConnectionError
-from .cloud import GizwitsCloudError
 from .const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DEVICE_TYPE_GYRE, DOMAIN, GYRE_INTERNAL_ONLY_DPS
 from .coordinator import MaxspectCoordinator
 from .icv6_api import ICV6ConnectionError
@@ -106,23 +105,12 @@ async def _async_setup_gizwits(
     await coordinator.async_load_settings()
 
     try:
-        await coordinator.client.async_connect()
-    except MaxspectConnectionError as err:
-        raise ConfigEntryNotReady(
-            f"Cannot connect to {coordinator.client.host}: {err}"
-        ) from err
+        state = await coordinator.async_initialize()
+    except UpdateFailed as err:
+        await coordinator.async_shutdown()
+        raise ConfigEntryNotReady(str(err)) from err
 
-    try:
-        await coordinator.async_cloud_login()
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.warning("Cloud login failed (control disabled): %s", err)
-
-    try:
-        await coordinator.async_seed_from_cloud()
-    except Exception:  # noqa: BLE001
-        _LOGGER.debug("Cloud seeding failed, will rely on LAN data")
-
-    coordinator.async_set_updated_data(coordinator.client.state)
+    coordinator.async_set_updated_data(state)
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

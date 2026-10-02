@@ -120,8 +120,8 @@ python3 _agent_workdir/icv6_devices.py --ip 192.168.50.247 --device R5S2A001602 
 | **ICV6 warning: no data returned** | Device may be off or unreachable. Check power and cable connections. |
 | **Gizwits login/auth** | `config_flow.py` calls the Gizwits API. Check logs for `Login response status`. |
 | **Gizwits device models** | `__init__.py` loads JSON model files from `models/`. If your pump's `product_key` doesn't match any model file, entities won't appear. |
-| **Gizwits LAN pushes** | Push-only monitoring on **TCP port 12416**, with handshake and heartbeats but no attribute queries. HA host must be on the same network/VLAN; full status can take 60-120 s and compact telemetry 3-5 min. |
-| **Cloud control** | Control commands go through Gizwits cloud API. Token expiry or regional mismatch (EU/US/CN) will cause failures. |
+| **Gyre LAN monitoring** | Pushes plus `0x12` reads on **TCP port 12416**: timestamp every 3 s and settings every 60 s. Partial responses may omit the full program. Keep one connection; both models use the same schema. |
+| **Gyre control and fallback** | Confirmed `0x11` mode writes are the default. Cloud is used when LAN status or command confirmation fails; token expiry or region mismatch can prevent fallback. Other Gizwits device types still use cloud control. |
 
 ---
 
@@ -134,13 +134,21 @@ python3 -m pytest tests/ -v
 
 Tests cover the ICV6 protocol helpers, coordinator logic, and all entity types. No real hardware required — all ICV6 I/O is mocked via `unittest.mock`.
 
+CI tests two environments without raising the integration's existing syntax
+floor: Python **3.12** with `pytest-homeassistant-custom-component==0.13.195`
+and Python **3.14** with the current Git tag `0.13.368`. The latter plugin
+requires Python 3.14 or newer; installing it under 3.12 fails before tests run.
+Use the matching interpreter and plugin when reproducing CI. Python 3.13 is
+not part of this test matrix. Home Assistant's own runtime requirements still
+apply.
+
 ---
 
 ## 7. Live Editing & Reloading
 
-For the Gyre push-only safety fix, fully restart Home Assistant after copying
+For the Gyre protocol and LAN-first changes, fully restart Home Assistant after copying
 the updated files. Reloading a config entry can reuse already imported Python
-modules; do not re-enable the old polling client.
+modules; do not re-enable a client with the reversed read/write opcodes.
 
 After code changes:
 

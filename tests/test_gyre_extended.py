@@ -34,6 +34,7 @@ def test_all_47_datapoints_from_full_read_response():
     values.update({dp: 0 for dp in range(17, 33)})
     values.update({dp: bytes(DP_LENGTHS[dp]) for dp in range(33, 47)})
     values.update({17: 36, 18: 1, 19: 15, 20: 1, 21: 1, 6: True})
+    values[34] = bytes([1, 26, 9, 15, 14, 30, 0])
     client = MaxspectClient("192.0.2.1")
     client._process_push(report(values, 0x13))
     assert set(client.state.generic_attrs) == set(GYRE_DP_NAMES)
@@ -80,13 +81,38 @@ async def test_model_and_local_control_options(hass, gyre_config_entry):
     assert gyre_config_entry.options["model_b"] == 1
 
 
-async def test_feeding_and_resume_buttons(hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud):
-    await setup_integration(hass, gyre_config_entry)
+async def test_invalid_mac_options_are_reported(hass, gyre_config_entry):
+    from homeassistant.data_entry_flow import InvalidData
+    gyre_config_entry.add_to_hass(hass)
+    flow = await hass.config_entries.options.async_init(gyre_config_entry.entry_id)
+    with pytest.raises(InvalidData, match="device_mac"):
+        await hass.config_entries.options.async_configure(
+            flow["flow_id"],
+            user_input={"model_a": 0, "model_b": 1, "local_control": True, "device_mac": "invalid"},
+        )
+
+
+@pytest.mark.parametrize("models", [(0, 0), (1, 1), (0, 1), (1, 0)])
+@pytest.mark.parametrize("local_control", [True, False])
+async def test_feeding_and_resume_buttons(
+    hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
+    models, local_control,
+):
+    entry = type(gyre_config_entry)(
+        domain=gyre_config_entry.domain, data=dict(gyre_config_entry.data),
+        unique_id=gyre_config_entry.unique_id, title=gyre_config_entry.title,
+        options={"model_a": models[0], "model_b": models[1], "local_control": local_control},
+    )
+    await setup_integration(hass, entry)
     for suffix, mode in (("start_feeding_pause", 2), ("resume_pumps", 4)):
         await hass.services.async_call("button", "press", {
             "entity_id": f"button.maxspect_my_gyre_{suffix}",
         }, blocking=True)
-        mock_gizwits_cloud.async_set_mode.assert_awaited_with(mode, did="test-did-001")
+        if local_control:
+            mock_maxspect_client.async_set_mode.assert_awaited_with(mode)
+            mock_gizwits_cloud.async_set_mode.assert_not_awaited()
+        else:
+            mock_gizwits_cloud.async_set_mode.assert_awaited_with(mode, did="test-did-001")
 
 
 async def test_local_control_uses_cloud_only_on_failure(
@@ -109,7 +135,10 @@ async def test_local_control_uses_cloud_only_on_failure(
 async def test_internal_program_data_has_no_redundant_raw_entity(
     hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
 ):
-    mock_gizwits_cloud.async_get_device_status.return_value = {"attr": {"Auto": "01" * 781}}
+    mock_gizwits_cloud.async_get_device_status.return_value = {
+        "attr": {"Mode": 5, "Auto": "01" * 781},
+    }
+    mock_maxspect_client.async_request_status.side_effect = MaxspectConnectionError("no LAN status")
     await setup_integration(hass, gyre_config_entry)
     state = hass.states.get("sensor.maxspect_my_gyre_auto_raw")
     assert state is None
@@ -129,6 +158,7 @@ async def test_missing_diagnostics_hide_and_reappear_with_report(
 ):
     from homeassistant.helpers import entity_registry as er
     mock_gizwits_cloud.async_get_device_status.return_value = {"attr": {}}
+    mock_maxspect_client.state.generic_attrs.clear()
     await setup_integration(hass, gyre_config_entry)
     coordinator = gyre_config_entry.runtime_data
     registry = er.async_get(hass)

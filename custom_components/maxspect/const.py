@@ -4,6 +4,7 @@ DOMAIN = "maxspect"
 
 DEFAULT_PORT = 12416
 DEFAULT_SCAN_INTERVAL = 30
+DEFAULT_LOCAL_CONTROL = True
 
 # ---------------------------------------------------------------------------
 # ICV6 constants
@@ -142,7 +143,9 @@ GYRE_DP_NAMES = (
     *(f"Bak{i}" for i in range(21, 27)),
 )
 
-# LAN heartbeat interval (seconds); automatic monitoring remains push-only.
+# Correct-opcode LAN polling and heartbeat intervals (seconds).
+POLL_INTERVAL = 3.0
+CONFIG_POLL_INTERVAL = 60.0
 HEARTBEAT_INTERVAL = 20.0
 
 # Discovery

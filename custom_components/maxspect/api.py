@@ -41,6 +41,7 @@ from .const import (
     CMD_DEV_INFO_RESP,
     CMD_HEARTBEAT_REQ,
     CMD_HEARTBEAT_RESP,
+    CONFIG_POLL_INTERVAL,
     DP_LENGTHS,
     FRAME_HEADER,
     HEARTBEAT_INTERVAL,
@@ -51,11 +52,12 @@ from .const import (
     MODE_EXIT_FEED,
     MODE_PROGRAMMING,
     MODE_WATER_FLOW,
+    POLL_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# Payloads for explicit reads only; the listener never polls attributes.
+# Read payloads use 0x12, never the controller's 0x11 write action.
 READ_STATE_NOTIFY = bytes([ACTION_READ]) + b"\x00\x04\x00\x00\x00\x00"
 
 # Request all 47 schema data points, including settings and diagnostics.
@@ -268,7 +270,7 @@ def _parse_state_notify(data: bytes, state: MaxspectDeviceState) -> None:
 class MaxspectClient:
     """Async TCP client for Maxspect devices using Gizwits LAN protocol."""
 
-    def __init__(self, host: str, port: int = 12416) -> None:
+    def __init__(self, host: str, port: int = 12416, *, polling: bool = True) -> None:
         self._host = host
         self._port = port
         self.last_report_attrs: dict[str, Any] = {}
@@ -284,6 +286,10 @@ class MaxspectClient:
         self._mode_event = asyncio.Event()
         self._mode_lock = asyncio.Lock()
         self._reported_mode: int | None = None
+        self._status_event = asyncio.Event()
+        self._polling = polling
+        self._last_traffic = 0.0
+        self._last_full_read = 0.0
         self._update_callback: Callable[[], None] | None = None
 
     @property
@@ -297,6 +303,13 @@ class MaxspectClient:
     @property
     def connected(self) -> bool:
         return self._connected and self._writer is not None
+
+    @property
+    def lan_status_available(self) -> bool:
+        return (
+            self.connected and self._reported_mode is not None
+            and time.monotonic() - self._last_traffic < HEARTBEAT_INTERVAL * 3
+        )
 
     def set_update_callback(self, callback: Callable[[], None]) -> None:
         self._update_callback = callback
@@ -325,6 +338,10 @@ class MaxspectClient:
             ) from err
 
         self._connected = True
+        self._reported_mode = None
+        self._last_traffic = 0.0
+        self._last_full_read = 0.0
+        self._status_event.clear()
         _LOGGER.debug("Connected to %s:%s", self._host, self._port)
 
         try:
@@ -392,9 +409,10 @@ class MaxspectClient:
     # -- Background listener -------------------------------------------
 
     async def _listen_loop(self) -> None:
-        """Receive device pushes and send heartbeats, never attribute queries."""
+        """Receive pushes, poll using the read opcode, and keep the connection alive."""
         loop = asyncio.get_running_loop()
         last_heartbeat = loop.time()
+        last_poll = 0.0
 
         while self._connected and self._reader and self._writer:
             now = loop.time()
@@ -411,6 +429,23 @@ class MaxspectClient:
                     self._connected = False
                     break
 
+            if self._polling and now - last_poll >= POLL_INTERVAL:
+                try:
+                    self._writer.write(_build_frame(CMD_DATA_SEND, READ_STATE_NOTIFY))
+                    await self._writer.drain()
+                    last_poll = now
+                except OSError as err:
+                    _LOGGER.warning("LAN status poll failed to %s: %s", self._host, err)
+                    self._connected = False
+                    break
+            if self._polling and now - self._last_full_read >= CONFIG_POLL_INTERVAL:
+                try:
+                    await self.async_request_full_status()
+                except OSError as err:
+                    _LOGGER.warning("LAN settings poll failed to %s: %s", self._host, err)
+                    self._connected = False
+                    break
+
             try:
                 resp = await _read_frame(self._reader, timeout=2)
             except asyncio.TimeoutError:
@@ -423,6 +458,7 @@ class MaxspectClient:
             if resp is None:
                 continue
 
+            self._last_traffic = time.monotonic()
             if resp["cmd"] == CMD_DATA_RECV:
                 self._process_push(resp["payload"])
             elif resp["cmd"] == 0x0094 and len(resp["payload"]) > 4:
@@ -472,6 +508,8 @@ class MaxspectClient:
         if reported_mode is not None:
             self._reported_mode = reported_mode
             self._mode_event.set()
+            self._status_event.set()
+        self._last_traffic = time.monotonic()
         self._state_event.set()
         if self._update_callback:
             self._update_callback()
@@ -570,18 +608,22 @@ class MaxspectClient:
         self._writer.write(_build_frame(0x0093, payload=b"\x00\x00\x00\x03" + READ_CONFIG_DPS))
         self._writer.write(_build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS))
         await self._writer.drain()
+        self._last_full_read = time.monotonic()
 
     async def async_request_status(self) -> MaxspectDeviceState:
         if not self.connected:
             await self.async_connect()
 
-        if self._state_event.is_set():
+        if self.lan_status_available:
             return self._state
 
+        self._status_event.clear()
+        await self.async_request_full_status()
         try:
-            await asyncio.wait_for(self._state_event.wait(), timeout=10)
-        except asyncio.TimeoutError:
+            await asyncio.wait_for(self._status_event.wait(), timeout=10)
+        except asyncio.TimeoutError as err:
             _LOGGER.warning("No status from %s within 10s", self._host)
+            raise MaxspectConnectionError("No operating-mode status received within 10s") from err
 
         return self._state
 

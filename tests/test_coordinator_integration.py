@@ -42,6 +42,15 @@ from .protocol_helpers import build_full_status_payload
 SWITCH_ENTITY = "switch.maxspect_my_gyre_pump_power"
 
 
+@pytest.fixture
+def gyre_config_entry(gyre_config_entry: MockConfigEntry) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=gyre_config_entry.domain, data=dict(gyre_config_entry.data),
+        unique_id=gyre_config_entry.unique_id, title=gyre_config_entry.title,
+        options={"local_control": False},
+    )
+
+
 class TestWriteCooldownIntegration:
 
     @pytest.mark.parametrize("reported_mode", [MODE_ON, MODE_OFF])
@@ -170,6 +179,7 @@ class TestWriteCooldownIntegration:
             build_compact_payload(mode=MODE_OFF, ch1_rpm=0, ch2_rpm=0),
             coordinator.client.state,
         )
+        coordinator.client.last_report_attrs = {"Mode": MODE_OFF}
         coordinator._on_device_push()
         await hass.async_block_till_done()
 

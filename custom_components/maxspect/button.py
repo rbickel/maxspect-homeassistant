@@ -28,7 +28,7 @@ async def async_setup_entry(
 class MaxspectFeedingButton(MaxspectEntity, ButtonEntity):
     """Start the controller's feeding timer or resume normal operation."""
 
-    def __init__(self, coordinator, mode: int, key: str, icon: str) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator, mode: int, key: str, icon: str) -> None:
         super().__init__(coordinator)
         self._mode = mode
         self._attr_translation_key = key
@@ -43,10 +43,10 @@ class MaxspectFeedingButton(MaxspectEntity, ButtonEntity):
 class MaxspectRefreshButton(MaxspectEntity, ButtonEntity):
     """Request program/settings without writing to the pumps."""
 
-    _attr_name = "Refresh schedule and settings"
+    _attr_translation_key = "refresh_program"
     _attr_icon = "mdi:refresh"
 
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator: MaxspectCoordinator) -> None:
         super().__init__(coordinator)
         base = coordinator.config_entry.unique_id or coordinator.client.host
         self._attr_unique_id = f"{base}_refresh_program"

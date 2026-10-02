@@ -40,7 +40,7 @@ views:
       name: Error status
     - entity: sensor.maxspect_pumps_channel_2_rpm
       name: Motor speed
-    - entity: sensor.maxspect_pumps_channel_2_power
+    - entity: sensor.maxspect_pumps_channel_2_power_raw
       name: Power reading (raw)
   - type: entities
     title: Current program settings
@@ -94,8 +94,10 @@ views:
       speed or feeding duration.
 
 
-      Home Assistant requests settings over the local network every minute and saves
-      valid reports automatically.
+      Home Assistant receives pushes, reads timestamp/status every three seconds,
+      requests settings over the local network every minute and saves valid reports
+      automatically. LAN commands are enabled by default; cloud is a fallback when
+      LAN cannot provide status or confirm a command.
 
 
       Use **Refresh schedule and settings** to request a new report. The refresh status

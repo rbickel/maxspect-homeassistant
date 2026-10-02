@@ -13,6 +13,15 @@ from custom_components.maxspect.coordinator import MaxspectCoordinator
 from .conftest import setup_integration
 
 
+@pytest.fixture
+def gyre_config_entry(gyre_config_entry):
+    return type(gyre_config_entry)(
+        domain=gyre_config_entry.domain, data=dict(gyre_config_entry.data),
+        unique_id=gyre_config_entry.unique_id, title=gyre_config_entry.title,
+        options={"local_control": False},
+    )
+
+
 async def test_timestamp_report_cannot_confirm_pending_mode(
     hass, gyre_config_entry, mock_maxspect_client, mock_gizwits_cloud,
 ):

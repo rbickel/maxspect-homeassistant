@@ -24,30 +24,34 @@ All communication happens **locally over TCP port 80** — no cloud account or a
 
 Maxspect Gyre pumps and LED fixtures use the **Gizwits IoT platform**.
 
-| Capability | Gyre XF330CE | Other devices |
+| Capability | Gyre XF330CE / XF350CE | Other devices |
 |---|---|---|
-| State monitoring | LAN push-only (local, device-driven) | Cloud polling |
-| Commands (on/off, feeding, resume) | Optional confirmed LAN control; cloud fallback | Cloud API |
+| State monitoring | LAN pushes and periodic reads; cloud fallback | Cloud polling |
+| Commands (on/off, feeding, resume) | Confirmed LAN control by default; cloud fallback | Cloud API |
 
 **Cloud credentials are required** for all Gizwits devices.
 
 #### Gyre LAN safety and update timing
 
-The integration does **not send LAN attribute-read queries**, including on
-startup or reconnect. A live test reproduced a physical change from XF330CE
-to XF350CE during the previous nominal-read sequence. Both automatic
-timestamp polling and the one-shot configuration query have therefore been
-removed. The exact firmware trigger remains uncertain; see the
+Older versions reversed the action bytes: their nominal reads used `0x11`,
+which is actually a **write**. A live test reproduced a physical change from
+XF330CE to XF350CE during that sequence. The corrected client uses **`0x12`
+for reads, `0x11` for deliberate mode writes, and `0x13` for read responses**.
+See the
 [captured protocol evidence](MAXSPECT_PROTOCOL.MD#104-physical-pump-profile-change-during-current-lan-read-sequence-2026-10-02).
 
-LAN monitoring retains the connection handshake, heartbeats, and incoming
-device pushes. On/off and mode commands still use the cloud API.
+LAN is the default for monitoring and controls. The client keeps one
+connection, receives pushes, polls timestamp/liveness every **3 seconds**, and
+requests settings every **60 seconds**. Writes wait for a matching controller
+report; a transport failure or missing confirmation triggers cloud fallback.
+Healthy Gyre LAN monitoring does not log in to or routinely poll the cloud.
 
-- Startup uses cached cloud status when available; it may be stale.
-- The device normally sends full status within **60-120 seconds** of connecting.
+- Startup requests LAN status first; cached cloud status is used only if LAN
+  cannot provide an operating mode. Cloud status may be stale.
+- Autonomous full status normally arrives within **60-120 seconds**.
 - Compact RPM, voltage, and power updates typically arrive every **3-5 minutes**.
-- Timestamp and configuration updates follow device pushes, not a fixed
-  three-second polling interval.
+- Read responses can be partial. A successful read or acknowledgement does
+  not guarantee a fresh schedule or every telemetry field.
 
 If you used an older version, **check both pump profiles on the physical
 controller or in Syna-G** and restore the correct models manually if necessary.
@@ -83,8 +87,8 @@ re-enabling it**, so the old Python client is no longer loaded.
 
 | Status | Device | Type |
 |---|---|---|
-| ✅ Confirmed | Gyre XF330CE | Pump |
-| ✅ Confirmed | Gyre XF350CE | Pump (LAN telemetry, LAN feeding/resume, cloud on/off tested) |
+| ✅ Supported | Gyre XF330CE | Pump: LAN push/read/write, feeding/resume, schedules, diagnostics, cloud fallback |
+| ✅ Supported | Gyre XF350CE | Pump: LAN push/read/write, feeding/resume, schedules, diagnostics, cloud fallback |
 | 🔄 Testing | LED L165 (wifi灯) | Light |
 | ❓ Unknown | LED MJ-L265 / L290 | Light |
 | ❓ Unknown | LED E8 | Light |
@@ -92,6 +96,19 @@ re-enabling it**, so the old Python client is no longer loaded.
 | ❓ Unknown | Aquarium System (套缸) | Combo |
 
 **Legend:** ✅ tested and confirmed working — 🔄 testing in progress — ❓ implemented but untested
+
+Both Gyre models share the same product key and implementation. A mixed
+XF330CE/XF350CE pair has the same capabilities: on/off, feeding and resume are
+**controller-wide actions affecting both connected pumps**, while telemetry
+and scheduled settings are exposed separately for A and B. Model selection
+does not enable or disable features and never rewrites controller profiles.
+
+The shared behavior is covered by tests for both model codes and mixed pairs.
+Corrected LAN feeding/resume hardware validation on XF350CE is reported in
+[#22](https://github.com/rbickel/maxspect-homeassistant/pull/22); XF330CE's
+captured full report has also been replayed against the same 47-field decoder.
+This is not a claim that every corrected LAN operation has been independently
+tested on both models in this environment.
 
 ## Installation
 
@@ -151,9 +168,11 @@ successfully authenticated using the United States region.
 #### Feeding and diagnostics
 
 The **Start feeding pause** button uses the duration stored on the controller.
-**Resume pumps** exits feeding early. Enable **Prefer confirmed local control**
-in Configure to use LAN commands; Home Assistant waits for a matching device
-mode report and falls back to cloud control on failure.
+**Resume pumps** exits feeding early. Confirmed local control is **enabled by
+default**; no opt-in is needed. Home Assistant waits for a matching device mode
+report and falls back to cloud control on failure. An explicitly saved
+disabled local-control option is respected. No separate maintenance button is
+added; the existing power switch can stop pumps outside a timed feeding pause.
 
 All 47 schema data points are parsed internally. Useful decoded values and
 remaining diagnostics are exposed as entities. Reserved `Bak` fields and the
