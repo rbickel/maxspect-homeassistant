@@ -12,10 +12,12 @@ Home Assistant dependency. They are the ground truth for:
 from __future__ import annotations
 
 import struct
+from unittest.mock import Mock
 
 import pytest
 
 from custom_components.maxspect.api import (
+    MaxspectClient,
     MaxspectDeviceState,
     _dp_data_offset,
     _dp_is_flagged,
@@ -23,6 +25,7 @@ from custom_components.maxspect.api import (
     _parse_state_notify,
 )
 from custom_components.maxspect.const import (
+    ACTION_DEVICE_REPORT,
     ATTR_FLAGS_LEN,
     DP_LENGTHS,
     MODE_EXIT_FEED,
@@ -32,6 +35,8 @@ from custom_components.maxspect.const import (
     MODE_PROGRAMMING,
     MODE_WATER_FLOW,
 )
+
+from .protocol_helpers import build_full_status_payload
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +179,84 @@ class TestParseCompactTelemetry:
         state = MaxspectDeviceState()
         _parse_compact_telemetry(_compact_payload(MODE_OFF)[:17], state)
         assert state.mode == MODE_OFF
+
+
+# ---------------------------------------------------------------------------
+# Full status push
+# ---------------------------------------------------------------------------
+
+class TestFullStatusPush:
+
+    @pytest.mark.parametrize("mode", [
+        MODE_WATER_FLOW, MODE_PROGRAMMING, MODE_FEED, MODE_OFF, MODE_EXIT_FEED, MODE_ON,
+    ])
+    def test_full_status_uses_its_memory_map(self, mode: int) -> None:
+        client = MaxspectClient("192.168.1.100")
+        client.state.feed_duration = 10
+        client.state.wash_reminder = 30
+        callback = Mock()
+        client.set_update_callback(callback)
+
+        client._process_push(build_full_status_payload(mode, hw_power=0))
+
+        state = client.state
+        assert state.mode == mode
+        assert state.is_on is (mode != MODE_OFF)
+        assert state.last_active_mode == (MODE_ON if mode == MODE_OFF else mode)
+        assert state.ch1_rpm == 2715
+        assert state.ch1_voltage == 23.94
+        assert state.ch1_power == 69
+        assert state.ch2_rpm == 2747
+        assert state.ch2_voltage == 23.77
+        assert state.ch2_power == 27
+        assert state.timestamp == "2026-10-02 16:28:17"
+        assert (state.model_a, state.model_b) == (0, 0)
+        assert state._model_initialized is False
+        assert state.feed_duration == 10
+        assert state.wash_reminder == 30
+        assert client._state_event.is_set()
+        callback.assert_called_once_with()
+
+    def test_full_status_preserves_cloud_seeded_models(self) -> None:
+        client = MaxspectClient("192.168.1.100")
+        client.state.model_a = 1
+        client.state.model_b = 0
+        client.state._model_initialized = True
+
+        client._process_push(build_full_status_payload())
+
+        assert (client.state.model_a, client.state.model_b) == (1, 0)
+        assert client.state._model_initialized is True
+        assert client.state.ch1_rpm == 2715
+
+    def test_scalar_models_can_initialize_after_full_status(self) -> None:
+        client = MaxspectClient("192.168.1.100")
+        client._process_push(build_full_status_payload())
+
+        client._process_push(
+            bytes([ACTION_DEVICE_REPORT]) + _flags_for_dps(20, 21) + b"\x01\x01"
+        )
+
+        assert (client.state.model_a, client.state.model_b) == (1, 1)
+        assert client.state._model_initialized is True
+
+    @pytest.mark.parametrize("length", [7, 42, 936, 1048, 1050])
+    def test_unexpected_full_status_length_is_logged_and_ignored(
+        self, length: int, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        client = MaxspectClient("192.168.1.100")
+        before = vars(client.state).copy()
+        callback = Mock()
+        client.set_update_callback(callback)
+        payload = build_full_status_payload()
+        payload = payload[:length] if length < len(payload) else payload + b"\x00"
+
+        client._process_push(payload)
+
+        assert vars(client.state) == before
+        assert not client._state_event.is_set()
+        callback.assert_not_called()
+        assert "full status" in caplog.text
 
 
 # ---------------------------------------------------------------------------

@@ -131,9 +131,7 @@ DP_LENGTHS: dict[int, int] = {
     33: 12, 34: 7, 35: 62, 36: 781, 37: 3, 38: 4, 39: 2, 40: 2,  # binary
 }
 
-# Polling / heartbeat intervals (seconds)
-POLL_INTERVAL = 3.0
-CONFIG_POLL_INTERVAL = 60.0
+# LAN heartbeat interval (seconds); attribute monitoring is push-only.
 HEARTBEAT_INTERVAL = 20.0
 
 # Discovery

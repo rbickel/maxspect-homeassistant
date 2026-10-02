@@ -7,6 +7,7 @@ Push payloads use Gizwits V4 var_len format:
   [action: 1B] [attr_flags: 6B] [dp_data...]
 
 The device pushes data in several message types:
+  - Full status        (1049 bytes) -- fixed-layout state and sensor readings
   - Compact telemetry  (flags[0]=0x10) -- periodic sensor readings
   - State notify        (DP 34 only) -- power state + timestamp
   - Mode updates        (DP 18 flagged) -- mode value changes
@@ -26,7 +27,6 @@ from typing import Any
 
 from .const import (
     ACTION_DEVICE_REPORT,
-    ACTION_READ,
     ACTION_WRITE,
     ATTR_FLAGS_LEN,
     CMD_BIND_ACK,
@@ -43,18 +43,12 @@ from .const import (
     MODE_NAMES,
     MODE_OFF,
     MODE_ON,
-    POLL_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# State notify polls DP 34 (Time) -- returns power + timestamp
-READ_STATE_NOTIFY = bytes([ACTION_READ]) + b"\x00\x04\x00\x00\x00\x00"
-
-# Config DPs: 19 (Time_Feed), 20 (Model_A), 21 (Model_B), 22 (Wash)
-# Bits 19-22 are in flags byte index 3 (ATTR_FLAGS_LEN-1 - 19//8 = 6-1-2 = 3)
-# Bits: 19%8=3, 20%8=4, 21%8=5, 22%8=6 → 0b01111000 = 0x78
-READ_CONFIG_DPS = bytes([ACTION_READ]) + b"\x00\x00\x00\x78\x00\x00"
+FULL_STATUS_PREFIX = bytes([ACTION_DEVICE_REPORT]) + b"\xff" * 4
+FULL_STATUS_DATA_LEN = 1044
 
 
 class MaxspectConnectionError(Exception):
@@ -233,6 +227,19 @@ def _parse_state_notify(data: bytes, state: MaxspectDeviceState) -> None:
             )
 
 
+def _parse_full_status(data: bytes, state: MaxspectDeviceState) -> None:
+    """Parse the fixed full-status memory map, not scalar-DP attr_flags.
+
+    Mode is at offset 45, Time at 33:40, and the channel block at 921:939.
+    The channel block shares the compact telemetry layout after its mode bytes.
+    """
+    if len(data) != FULL_STATUS_DATA_LEN:
+        return
+
+    _parse_compact_telemetry(bytes([data[45], 0]) + data[921:939], state)
+    _parse_state_notify(data[33:40], state)
+
+
 # -- Client class ------------------------------------------------------
 
 
@@ -354,11 +361,9 @@ class MaxspectClient:
     # -- Background listener -------------------------------------------
 
     async def _listen_loop(self) -> None:
-        """Read frames, send heartbeats, poll for status."""
+        """Receive device pushes and send heartbeats, never attribute queries."""
         loop = asyncio.get_running_loop()
         last_heartbeat = loop.time()
-        last_poll = 0.0
-        config_poll_done = False
 
         while self._connected and self._reader and self._writer:
             now = loop.time()
@@ -372,32 +377,6 @@ class MaxspectClient:
                     last_heartbeat = now
                 except OSError:
                     _LOGGER.warning("Heartbeat send failed to %s", self._host)
-                    self._connected = False
-                    break
-
-            # Poll state notify for power + timestamp
-            if now - last_poll >= POLL_INTERVAL:
-                try:
-                    self._writer.write(
-                        _build_frame(CMD_DATA_SEND, payload=READ_STATE_NOTIFY)
-                    )
-                    await self._writer.drain()
-                    last_poll = now
-                except OSError:
-                    _LOGGER.warning("Poll send failed to %s", self._host)
-                    self._connected = False
-                    break
-
-            # Read config DPs (19-22) once per connection
-            if not config_poll_done:
-                try:
-                    self._writer.write(
-                        _build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS)
-                    )
-                    await self._writer.drain()
-                    config_poll_done = True
-                except OSError:
-                    _LOGGER.warning("Config poll send failed to %s", self._host)
                     self._connected = False
                     break
 
@@ -442,9 +421,26 @@ class MaxspectClient:
             return
 
         updated = False
+        is_full_status = payload.startswith(FULL_STATUS_PREFIX)
 
+        if is_full_status:
+            full_data = payload[len(FULL_STATUS_PREFIX):]
+            if len(full_data) != FULL_STATUS_DATA_LEN:
+                _LOGGER.warning(
+                    "Ignoring full status from %s: %d bytes, expected %d",
+                    self._host, len(full_data), FULL_STATUS_DATA_LEN,
+                )
+                return
+            _parse_full_status(full_data, self._state)
+            _LOGGER.debug(
+                "Full status from %s: mode=%d ch1=%drpm/%dW ch2=%drpm/%dW",
+                self._host, self._state.mode,
+                self._state.ch1_rpm, self._state.ch1_power,
+                self._state.ch2_rpm, self._state.ch2_power,
+            )
+            updated = True
         # Compact telemetry: flags[0] bit 4 = firmware telemetry DP
-        if flags[0] & 0x10:
+        elif flags[0] & 0x10:
             _parse_compact_telemetry(data, self._state)
             _LOGGER.debug(
                 "Compact telemetry from %s: mode=%d ch1=%drpm/%dW ch2=%drpm/%dW",
@@ -481,7 +477,7 @@ class MaxspectClient:
 
         # Config DPs (19-22): uint8 values packed sequentially
         config_dps = [19, 20, 21, 22]
-        if any(_dp_is_flagged(flags, dp) for dp in config_dps):
+        if not is_full_status and any(_dp_is_flagged(flags, dp) for dp in config_dps):
             model_set = False
             for dp_id in config_dps:
                 if _dp_is_flagged(flags, dp_id):
@@ -490,15 +486,25 @@ class MaxspectClient:
                         val = data[offset]
                         if dp_id == 19:
                             self._state.feed_duration = val
-                        elif dp_id == 20:
-                            # Model attributes are immutable - only set once
+                        elif dp_id in (20, 21):
+                            if val not in (0, 1):
+                                _LOGGER.warning(
+                                    "Ignoring invalid model DP %d=%d from %s (expected 0 or 1)",
+                                    dp_id, val, self._host,
+                                )
+                                continue
+                            cached = self._state.model_a if dp_id == 20 else self._state.model_b
                             if not self._state._model_initialized:
-                                self._state.model_a = val
-                            model_set = True
-                        elif dp_id == 21:
-                            # Model attributes are immutable - only set once
-                            if not self._state._model_initialized:
-                                self._state.model_b = val
+                                if dp_id == 20:
+                                    self._state.model_a = val
+                                else:
+                                    self._state.model_b = val
+                            elif val != cached:
+                                _LOGGER.warning(
+                                    "Device %s reported model DP %d=%d, which differs from cached %d; "
+                                    "keeping cached model",
+                                    self._host, dp_id, val, cached,
+                                )
                             model_set = True
                         elif dp_id == 22:
                             self._state.wash_reminder = val

@@ -1,16 +1,13 @@
 """Test that device model attributes remain immutable after initialization.
 
-This test verifies the fix for the issue where push/pull through LAN
-could alter device attributes like model, causing XF330CE to change
-to XF350CE intermittently.
-
-The fix ensures that model_a and model_b are only set once (either
-from cloud or LAN) and cannot be changed by subsequent updates.
+These tests cover only the cached Home Assistant model values, not controller
+configuration. Preventing physical changes requires push-only LAN monitoring.
+Valid model_a and model_b values are set once, from cloud or LAN.
 """
 
 from __future__ import annotations
 
-from __future__ import annotations
+import pytest
 
 from custom_components.maxspect.api import MaxspectClient, MaxspectDeviceState
 from custom_components.maxspect.const import ATTR_FLAGS_LEN
@@ -152,3 +149,36 @@ class TestModelImmutability:
         assert client.state.model_a == 0
         assert client.state.model_b == 0
         assert client.state._model_initialized is False
+
+    def test_date_like_config_reply_does_not_initialize_models(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        client = MaxspectClient("192.168.1.100")
+
+        client._process_push(bytes.fromhex("140000007800005a1a0a02"))
+
+        assert (client.state.model_a, client.state.model_b) == (0, 0)
+        assert client.state._model_initialized is False
+        assert "model DP 20" in caplog.text
+        assert "26" in caplog.text
+        assert "model DP 21" in caplog.text
+        assert "10" in caplog.text
+
+        client._process_push(b"\x14" + _flags_for_dps(20, 21) + b"\x01\x01")
+
+        assert (client.state.model_a, client.state.model_b) == (1, 1)
+        assert client.state._model_initialized is True
+
+    def test_changed_model_report_is_logged_without_changing_cache(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        client = MaxspectClient("192.168.1.100")
+        flags = _flags_for_dps(20, 21)
+        client._process_push(b"\x14" + flags + b"\x00\x00")
+
+        client._process_push(b"\x14" + flags + b"\x01\x01")
+
+        assert (client.state.model_a, client.state.model_b) == (0, 0)
+        assert "model DP 20" in caplog.text
+        assert "model DP 21" in caplog.text
+        assert "differs from cached" in caplog.text

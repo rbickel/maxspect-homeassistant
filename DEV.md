@@ -120,7 +120,7 @@ python3 _agent_workdir/icv6_devices.py --ip 192.168.50.247 --device R5S2A001602 
 | **ICV6 warning: no data returned** | Device may be off or unreachable. Check power and cable connections. |
 | **Gizwits login/auth** | `config_flow.py` calls the Gizwits API. Check logs for `Login response status`. |
 | **Gizwits device models** | `__init__.py` loads JSON model files from `models/`. If your pump's `product_key` doesn't match any model file, entities won't appear. |
-| **Gizwits LAN polling** | Integration polls devices locally on **TCP port 12416**. HA host must be on the same network/VLAN. |
+| **Gizwits LAN pushes** | Push-only monitoring on **TCP port 12416**, with handshake and heartbeats but no attribute queries. HA host must be on the same network/VLAN; full status can take 60-120 s and compact telemetry 3-5 min. |
 | **Cloud control** | Control commands go through Gizwits cloud API. Token expiry or regional mismatch (EU/US/CN) will cause failures. |
 
 ---
@@ -137,6 +137,10 @@ Tests cover the ICV6 protocol helpers, coordinator logic, and all entity types. 
 ---
 
 ## 7. Live Editing & Reloading
+
+For the Gyre push-only safety fix, fully restart Home Assistant after copying
+the updated files. Reloading a config entry can reuse already imported Python
+modules; do not re-enable the old polling client.
 
 After code changes:
 

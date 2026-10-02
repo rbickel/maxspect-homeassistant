@@ -33,15 +33,52 @@ from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.maxspect.api import _parse_compact_telemetry
+from custom_components.maxspect.api import _parse_compact_telemetry, _parse_full_status
 from custom_components.maxspect.const import MODE_FEED, MODE_OFF, MODE_ON
 
 from .conftest import build_compact_payload, setup_integration
+from .protocol_helpers import build_full_status_payload
 
 SWITCH_ENTITY = "switch.maxspect_my_gyre_pump_power"
 
 
 class TestWriteCooldownIntegration:
+
+    @pytest.mark.parametrize("reported_mode", [MODE_ON, MODE_OFF])
+    async def test_full_status_respects_pending_cloud_mode(
+        self,
+        hass: HomeAssistant,
+        mock_maxspect_client: MagicMock,
+        mock_gizwits_cloud: AsyncMock,
+        gyre_config_entry: MockConfigEntry,
+        reported_mode: int,
+    ) -> None:
+        await setup_integration(hass, gyre_config_entry)
+        coordinator = gyre_config_entry.runtime_data
+        await hass.services.async_call(
+            SWITCH_DOMAIN,
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: SWITCH_ENTITY},
+            blocking=True,
+        )
+
+        _parse_full_status(
+            build_full_status_payload(reported_mode)[5:], coordinator.client.state,
+        )
+        coordinator._on_device_push()
+        await hass.async_block_till_done()
+
+        assert coordinator.data is coordinator.client.state
+        assert coordinator.data.mode == MODE_OFF
+        assert coordinator.data.is_on is False
+        assert hass.states.get(SWITCH_ENTITY).state == STATE_OFF
+        if reported_mode == MODE_OFF:
+            assert coordinator._write_lock_until == 0.0
+        else:
+            assert coordinator._write_lock_until > time.monotonic()
+        mock_gizwits_cloud.async_set_mode.assert_called_once_with(
+            MODE_OFF, did="test-did-001",
+        )
 
     async def test_cooldown_activated_after_turn_off(
         self,

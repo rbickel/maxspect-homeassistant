@@ -26,10 +26,35 @@ Maxspect Gyre pumps and LED fixtures use the **Gizwits IoT platform**.
 
 | Capability | Gyre XF330CE | Other devices |
 |---|---|---|
-| State monitoring | LAN push (fast, local) | Cloud polling |
+| State monitoring | LAN push-only (local, device-driven) | Cloud polling |
 | Commands (on/off, mode) | Cloud API | Cloud API |
 
 **Cloud credentials are required** for all Gizwits devices.
+
+#### Gyre LAN safety and update timing
+
+The integration does **not send LAN attribute-read queries**, including on
+startup or reconnect. A live test reproduced a physical change from XF330CE
+to XF350CE during the previous nominal-read sequence. Both automatic
+timestamp polling and the one-shot configuration query have therefore been
+removed. The exact firmware trigger remains uncertain; see the
+[captured protocol evidence](MAXSPECT_PROTOCOL.MD#104-physical-pump-profile-change-during-current-lan-read-sequence-2026-10-02).
+
+LAN monitoring retains the connection handshake, heartbeats, and incoming
+device pushes. On/off and mode commands still use the cloud API.
+
+- Startup uses cached cloud status when available; it may be stale.
+- The device normally sends full status within **60-120 seconds** of connecting.
+- Compact RPM, voltage, and power updates typically arrive every **3-5 minutes**.
+- Timestamp and configuration updates follow device pushes, not a fixed
+  three-second polling interval.
+
+If you used an older version, **check both pump profiles on the physical
+controller or in Syna-G** and restore the correct models manually if necessary.
+Installing this change does not restore controller settings. Home Assistant's
+cached model sensors are not proof that the physical profiles are unchanged.
+After installing the updated integration, **restart Home Assistant before
+re-enabling it**, so the old Python client is no longer loaded.
 
 ## Features
 
