@@ -16,12 +16,14 @@ import struct
 import pytest
 
 from custom_components.maxspect.api import (
+    MaxspectClient,
     MaxspectDeviceState,
     _dp_data_offset,
     _dp_is_flagged,
     _parse_compact_telemetry,
     _parse_state_notify,
 )
+
 from custom_components.maxspect.const import (
     ATTR_FLAGS_LEN,
     DP_LENGTHS,
@@ -32,6 +34,28 @@ from custom_components.maxspect.const import (
     MODE_PROGRAMMING,
     MODE_WATER_FLOW,
 )
+
+
+def test_xf350ce_captured_telemetry() -> None:
+    """Decode an XF350CE LAN report captured during hardware validation."""
+    client = MaxspectClient("192.0.2.1")
+    client._process_push(bytes.fromhex(
+        "14100000000000050008c609590036aa050007ea094d00b3bb0b0b0000000000"
+    ))
+    assert client.state.is_on
+    assert client.state.ch1_rpm == 2246
+    assert client.state.ch2_rpm == 2026
+    assert client.state.ch1_voltage == 23.93
+    assert client.state.ch2_voltage == 23.81
+
+
+@pytest.mark.parametrize("value", [0, 4, 121, 165, 186, 255])
+def test_invalid_feed_report_preserves_valid_duration(value: int) -> None:
+    """Invalid LAN bytes must not overwrite a valid feeding duration."""
+    client = MaxspectClient("192.0.2.1")
+    client.state.feed_duration = 10
+    client._process_push(bytes.fromhex("14000000080000") + bytes([value]))
+    assert client.state.feed_duration == 10
 
 
 # ---------------------------------------------------------------------------

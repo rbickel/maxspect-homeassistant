@@ -43,7 +43,22 @@
       "already_configured": "This device is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Pump models",
+        "description": "Select the model printed on each pump if automatic identification is incorrect. This only changes identification in Home Assistant.",
+        "data": {"model_a": "Pump A model", "model_b": "Pump B model", "local_control": "Prefer confirmed local control (cloud fallback)"},
+        "device_mac": "Device MAC address (optional)",
+        "firmware_version": "App-confirmed firmware version (fallback only)"
+      }
+    }
+  },
   "entity": {
+    "button": {
+      "start_feeding": {"name": "Start feeding pause"},
+      "resume_pumps": {"name": "Resume pumps"}
+    },
     "switch": {
       "pump_power": { "name": "Pump power" },
       "light_power": { "name": "Light" },
@@ -58,8 +73,8 @@
       "ch2_rpm":       { "name": "Channel 2 RPM" },
       "ch1_voltage":   { "name": "Channel 1 voltage" },
       "ch2_voltage":   { "name": "Channel 2 voltage" },
-      "ch1_power":     { "name": "Channel 1 power" },
-      "ch2_power":     { "name": "Channel 2 power" },
+      "ch1_power":     { "name": "Channel 1 power raw" },
+      "ch2_power":     { "name": "Channel 2 power raw" },
       "timestamp":     { "name": "Device timestamp" },
       "feed_duration": { "name": "Feed duration" },
       "model_a":       { "name": "Pump A model" },

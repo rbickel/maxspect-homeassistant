@@ -169,6 +169,8 @@ def mock_lan_client() -> MagicMock:
         model_b=0,
         wash_reminder=7,
     )
+    client.state._model_initialized = True
+    client.state._initialized_models = {20, 21}
     client.async_connect = AsyncMock()
     client.async_disconnect = AsyncMock()
     client.async_validate_connection = AsyncMock()

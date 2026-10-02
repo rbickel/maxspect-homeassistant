@@ -7,7 +7,8 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.core import callback
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -86,6 +87,11 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialise flow state."""
         self._protocol: str = DEVICE_PROTOCOL_GIZWITS
         self._lan_data: dict[str, Any] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> MaxspectOptionsFlow:
+        return MaxspectOptionsFlow()
 
     # ------------------------------------------------------------------
     # Step 1: device-type selection
@@ -235,4 +241,24 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="cloud",
             data_schema=STEP_CLOUD_DATA_SCHEMA,
             errors=errors,
+        )
+
+
+class MaxspectOptionsFlow(OptionsFlow):
+    """Allow owners to identify pumps when firmware metadata is unreliable."""
+
+    async def async_step_init(self, user_input=None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+        models = {-1: "Automatic", 0: "XF330CE", 1: "XF350CE"}
+        schema = {
+                vol.Required(key, default=self.config_entry.options.get(key, -1)): vol.In(models)
+                for key in ("model_a", "model_b")
+        }
+        schema[vol.Required("local_control", default=self.config_entry.options.get("local_control", False))] = bool
+        for key in ("device_mac", "firmware_version"):
+            schema[vol.Optional(key, default=self.config_entry.options.get(key, ""))] = str
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema),
         )

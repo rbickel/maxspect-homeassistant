@@ -6,11 +6,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .api import MaxspectConnectionError
 from .cloud import GizwitsCloudError
-from .const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DOMAIN
+from .const import CONF_DEVICE_PROTOCOL, DEVICE_PROTOCOL_ICV6, DEVICE_TYPE_GYRE, DOMAIN, GYRE_INTERNAL_ONLY_DPS
 from .coordinator import MaxspectCoordinator
 from .icv6_api import ICV6ConnectionError
 from .icv6_coordinator import ICV6Coordinator
@@ -19,7 +19,7 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.BUTTON, Platform.BINARY_SENSOR]
 
 type MaxspectConfigEntry = ConfigEntry[MaxspectCoordinator | ICV6Coordinator]
 
@@ -27,10 +27,16 @@ type MaxspectConfigEntry = ConfigEntry[MaxspectCoordinator | ICV6Coordinator]
 async def async_setup_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> bool:
     """Set up Maxspect from a config entry."""
 
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     if entry.data.get(CONF_DEVICE_PROTOCOL) == DEVICE_PROTOCOL_ICV6:
         return await _async_setup_icv6(hass, entry)
 
     return await _async_setup_gizwits(hass, entry)
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +103,7 @@ async def _async_setup_gizwits(
 ) -> bool:
     """Set up a Gizwits (LAN + Cloud) device entry."""
     coordinator = MaxspectCoordinator(hass, entry)
+    await coordinator.async_load_settings()
 
     try:
         await coordinator.client.async_connect()
@@ -119,6 +126,13 @@ async def _async_setup_gizwits(
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if coordinator.device_type == DEVICE_TYPE_GYRE:
+        registry = er.async_get(hass)
+        base = entry.unique_id or coordinator.client.host
+        retired_ids = {f"{base}_dp_{dp}" for dp in GYRE_INTERNAL_ONLY_DPS}
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if entity.platform == DOMAIN and entity.unique_id in retired_ids:
+                registry.async_remove(entity.entity_id)
     return True
 
 
@@ -134,7 +148,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: MaxspectConfigEntry) ->
         if isinstance(coordinator, ICV6Coordinator):
             pass  # ICV6 connections are stateless (new socket per request)
         else:
-            await coordinator.client.async_disconnect()
-            if coordinator.cloud is not None:
-                await coordinator.cloud.async_close()
+            await coordinator.async_shutdown()
     return unload_ok

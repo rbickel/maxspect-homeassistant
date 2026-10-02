@@ -19,6 +19,7 @@ pytestmark = pytest.mark.integration
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -171,7 +172,7 @@ class TestEntityRegistration:
         """Gyre setup creates the expected switch and sensor entities."""
         await setup_integration(hass, gyre_config_entry)
 
-        entity_registry = hass.helpers.entity_registry.async_get()
+        entity_registry = er.async_get(hass)
         # Look up entities by unique_id prefix
         entries = [
             e for e in entity_registry.entities.values()
@@ -234,9 +235,13 @@ class TestICV6Setup:
             assert icv6_config_entry.state is ConfigEntryState.LOADED
 
             # Verify the hub device was registered
-            device_registry = hass.helpers.device_registry.async_get()
-            hub_device = device_registry.async_get_device(
-                identifiers={(DOMAIN, "icv6_192.168.50.247")}
+            device_registry = dr.async_get(hass)
+            hub_device = next(
+                (device for device in dr.async_entries_for_config_entry(
+                    device_registry, icv6_config_entry.entry_id
+                )
+                 if (DOMAIN, "icv6_192.168.50.247") in device.identifiers),
+                None,
             )
 
             assert hub_device is not None
