@@ -416,7 +416,7 @@ class TestPushOnlyMonitoring:
             await client.async_disconnect()
             await device.stop()
 
-    async def test_autonomous_full_status_updates_telemetry_not_models(self) -> None:
+    async def test_autonomous_full_status_updates_valid_telemetry_and_models(self) -> None:
         device = FakeGizwitsDevice()
         await device.start()
         client = MaxspectClient("127.0.0.1", device.port)
@@ -437,7 +437,7 @@ class TestPushOnlyMonitoring:
             assert client.state.ch2_rpm == 2747
             assert client.state.timestamp == "2026-10-02 16:28:17"
             assert (client.state.model_a, client.state.model_b) == (0, 0)
-            assert client.state._model_initialized is False
+            assert client.state._model_initialized is True
             assert CMD_DATA_SEND not in device.received_commands
         finally:
             await client.async_disconnect()

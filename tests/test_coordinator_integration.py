@@ -33,7 +33,7 @@ from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.maxspect.api import _parse_compact_telemetry, _parse_full_status
+from custom_components.maxspect.api import MaxspectClient, _parse_compact_telemetry
 from custom_components.maxspect.const import MODE_FEED, MODE_OFF, MODE_ON
 
 from .conftest import build_compact_payload, setup_integration
@@ -62,10 +62,11 @@ class TestWriteCooldownIntegration:
             blocking=True,
         )
 
-        _parse_full_status(
-            build_full_status_payload(reported_mode)[5:], coordinator.client.state,
-        )
-        coordinator._on_device_push()
+        client = MaxspectClient("192.0.2.1")
+        client._state = coordinator.client.state
+        coordinator.client = client
+        client.set_update_callback(coordinator._on_device_push)
+        client._process_push(build_full_status_payload(reported_mode))
         await hass.async_block_till_done()
 
         assert coordinator.data is coordinator.client.state

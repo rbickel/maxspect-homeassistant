@@ -27,6 +27,21 @@ def _flags_for_dps(*dp_ids: int) -> bytes:
 class TestModelImmutability:
     """Test model attributes remain stable after first initialization."""
 
+    def test_partial_model_report_does_not_freeze_other_pump(self) -> None:
+        client = MaxspectClient("192.0.2.1")
+        client._process_push(b"\x14" + _flags_for_dps(20) + b"\x01")
+        assert client.state._initialized_models == {20}
+        assert not client.state._model_initialized
+        client._process_push(b"\x14" + _flags_for_dps(21) + b"\x01")
+        assert client.state.model_a == client.state.model_b == 1
+        assert client.state._model_initialized
+
+    def test_invalid_model_does_not_confirm_defaults(self) -> None:
+        client = MaxspectClient("192.0.2.1")
+        client._process_push(b"\x14" + _flags_for_dps(20) + b"\xba")
+        assert not client.state._initialized_models
+        assert not client.state._model_initialized
+
     def test_model_set_once_from_lan_push(self) -> None:
         """Model attributes set from first LAN config DP push remain stable."""
         client = MaxspectClient(host="192.168.1.100")

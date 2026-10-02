@@ -30,6 +30,20 @@ from custom_components.maxspect.const import (
 from .conftest import setup_integration
 
 
+@pytest.mark.usefixtures("no_cloud_seed")
+async def test_missing_model_metadata_is_unknown(
+    hass, mock_maxspect_client, mock_gizwits_cloud, gyre_config_entry,
+) -> None:
+    """Default zeroes are not evidence that an XF350CE is an XF330CE."""
+    mock_maxspect_client.state._model_initialized = False
+    mock_maxspect_client.state._initialized_models.clear()
+    await setup_integration(hass, gyre_config_entry)
+    for channel in ("a", "b"):
+        state = hass.states.get(f"sensor.maxspect_my_gyre_pump_{channel}_model")
+        assert state is not None
+        assert state.state == STATE_UNKNOWN
+
+
 # ---------------------------------------------------------------------------
 # Helper: request no_cloud_seed fixture for tests that set non-default state
 # ---------------------------------------------------------------------------
@@ -209,7 +223,7 @@ class TestGyrePowerSensors:
     ) -> None:
         await setup_integration(hass, gyre_config_entry)
 
-        state = hass.states.get("sensor.maxspect_my_gyre_channel_1_power")
+        state = hass.states.get("sensor.maxspect_my_gyre_channel_1_power_raw")
         assert state is not None
         assert state.state == "72"
 
@@ -222,7 +236,7 @@ class TestGyrePowerSensors:
     ) -> None:
         await setup_integration(hass, gyre_config_entry)
 
-        state = hass.states.get("sensor.maxspect_my_gyre_channel_2_power")
+        state = hass.states.get("sensor.maxspect_my_gyre_channel_2_power_raw")
         assert state is not None
         assert state.state == "65"
 
@@ -238,7 +252,7 @@ class TestGyrePowerSensors:
 
         await setup_integration(hass, gyre_config_entry)
 
-        state = hass.states.get("sensor.maxspect_my_gyre_channel_1_power")
+        state = hass.states.get("sensor.maxspect_my_gyre_channel_1_power_raw")
         assert state.state == STATE_UNKNOWN
 
 

@@ -56,7 +56,7 @@ PRODUCT_KEY_TO_DEVICE_TYPE: dict[str, str] = {
 }
 
 PRODUCT_KEY_TO_MODEL_NAME: dict[str, str] = {
-    "cd01d1f3ab2647ea9da51e045cf53d61": "Gyre XF330CE",
+    "cd01d1f3ab2647ea9da51e045cf53d61": "Gyre XF330CE / XF350CE",
     "401dff8180744f02b071f476edf6363b": "LED L165 (wifi灯)",
     "5dc78a56545d49259d294dbddcd948ec": "LED MJ-L265/L290",
     "53a6a71bb6164ee1a0c230b01d20c03e": "LED E8",
@@ -100,9 +100,9 @@ CMD_DATA_SEND = 0x0090
 CMD_DATA_RECV = 0x0091
 
 # Data point protocol actions (first byte of 0x0090/0x0091 payload)
-ACTION_READ = 0x11
-ACTION_WRITE = 0x12
-ACTION_WRITE_ACK = 0x13
+ACTION_READ = 0x12
+ACTION_WRITE = 0x11
+ACTION_READ_ACK = 0x13
 ACTION_DEVICE_REPORT = 0x14
 
 # Attr flags length (6 bytes = 48 bits for data points 0-47)
@@ -127,12 +127,29 @@ MODE_NAMES = {
 
 # Non-bool data point byte lengths (for offset calculation in device reports)
 DP_LENGTHS: dict[int, int] = {
-    17: 1, 18: 1, 19: 1, 20: 1, 21: 1, 22: 1,   # uint8
+    **{dp: 1 for dp in range(17, 33)},
     33: 12, 34: 7, 35: 62, 36: 781, 37: 3, 38: 4, 39: 2, 40: 2,  # binary
+    41: 5, 42: 10, 43: 10, 44: 25, 45: 50, 46: 50,
 }
 
-# LAN heartbeat interval (seconds); attribute monitoring is push-only.
+# Names and lengths from the Gyre product schema bundled with Syna-G Cloud.
+GYRE_DP_NAMES = (
+    "Upgrade_License", "Reboot", "Factory_Settings", "State_A", "State_B",
+    "Error_A", "Error_B", *(f"Bak{i}" for i in range(1, 11)),
+    "Version_Firmware", "Mode", "Time_Feed", "Model_A", "Model_B", "Wash",
+    *(f"Bak{i}" for i in range(11, 21)), "Serial_Number", "Time", "Manual",
+    "Auto", "Countdown_Feed", "Backup", "Current_A", "Current_B",
+    *(f"Bak{i}" for i in range(21, 27)),
+)
+
+# LAN heartbeat interval (seconds); automatic monitoring remains push-only.
 HEARTBEAT_INTERVAL = 20.0
 
 # Discovery
 DISCOVERY_TIMEOUT = 5.0
+
+# Retain these fields in protocol data, without creating redundant raw entities.
+GYRE_INTERNAL_ONLY_DPS = frozenset(
+    {0, 1, 2, 20, 21, 34, 35, 36, 37, 38, 39, 40}
+    | set(range(7, 17)) | set(range(23, 33)) | set(range(41, 47))
+)

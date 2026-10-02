@@ -1,6 +1,6 @@
 {
   "product_key": "cd01d1f3ab2647ea9da51e045cf53d61",
-  "name": "Maxspect XF330CE Gyre",
+  "name": "Maxspect XF330CE / XF350CE Gyre",
   "name_zh": "漩影WiFi",
   "packet_version": "0x00000004",
   "protocol_type": "var_len",
@@ -10,7 +10,7 @@
   "state_notify_prefix": "140004",
   "change_notify_prefix": "1400000004",
   "status_payload_len": 1044,
-  "protocol_notes": "Gizwits V4 var_len protocol. Read action=0x11, write action=0x12. Attr flags are 6 bytes BIG-ENDIAN (byte[0]=DPs40-47, byte[5]=DPs0-7). Mode DP (ID 18) → byte[3]=0x04. Mode: 3=OFF, 5=ON. Verified on live device 2026-03-15.",
+  "protocol_notes": "Gizwits V4 var_len protocol. Read action=0x12, write action=0x11, read response=0x13. Attr flags are 6 bytes BIG-ENDIAN (byte[0]=DPs40-47, byte[5]=DPs0-7). Mode DP (ID 18) → byte[3]=0x04. Mode: 3=OFF, 5=ON. Verified on live device 2026-03-15.",
   "gizwits_data_points": [
     {"id": 0, "name": "Upgrade_License", "data_type": "bool", "type": "status_writable", "desc": "0=allow upgrade, 1=deny"},
     {"id": 1, "name": "Reboot", "data_type": "bool", "type": "status_writable", "desc": "0=noop, 1=reboot device"},
@@ -35,6 +35,16 @@
     {"id": 20, "name": "Model_A", "data_type": "uint8", "type": "status_writable", "desc": "0=330, 1=350"},
     {"id": 21, "name": "Model_B", "data_type": "uint8", "type": "status_writable", "desc": "0=330, 1=350"},
     {"id": 22, "name": "Wash", "data_type": "uint8", "type": "status_writable", "desc": "Wash reminder countdown"},
+    {"id": 23, "name": "Bak11", "data_type": "uint8", "type": "status_writable"},
+    {"id": 24, "name": "Bak12", "data_type": "uint8", "type": "status_writable"},
+    {"id": 25, "name": "Bak13", "data_type": "uint8", "type": "status_writable"},
+    {"id": 26, "name": "Bak14", "data_type": "uint8", "type": "status_writable"},
+    {"id": 27, "name": "Bak15", "data_type": "uint8", "type": "status_writable"},
+    {"id": 28, "name": "Bak16", "data_type": "uint8", "type": "status_writable"},
+    {"id": 29, "name": "Bak17", "data_type": "uint8", "type": "status_writable"},
+    {"id": 30, "name": "Bak18", "data_type": "uint8", "type": "status_writable"},
+    {"id": 31, "name": "Bak19", "data_type": "uint8", "type": "status_writable"},
+    {"id": 32, "name": "Bak20", "data_type": "uint8", "type": "status_writable"},
     {"id": 33, "name": "Serial_Number", "data_type": "binary", "len": 12, "type": "status_readonly"},
     {"id": 34, "name": "Time", "data_type": "binary", "len": 7, "type": "status_writable"},
     {"id": 35, "name": "Manual", "data_type": "binary", "len": 62, "type": "status_writable", "desc": "Manual pump program data"},
@@ -42,7 +52,13 @@
     {"id": 37, "name": "Countdown_Feed", "data_type": "binary", "len": 3, "type": "status_writable"},
     {"id": 38, "name": "Backup", "data_type": "binary", "len": 4, "type": "status_writable", "desc": "Pump A/B direction+speed"},
     {"id": 39, "name": "Current_A", "data_type": "binary", "len": 2, "type": "status_writable"},
-    {"id": 40, "name": "Current_B", "data_type": "binary", "len": 2, "type": "status_writable"}
+    {"id": 40, "name": "Current_B", "data_type": "binary", "len": 2, "type": "status_writable"},
+    {"id": 41, "name": "Bak21", "data_type": "binary", "len": 5, "type": "status_writable", "desc": "Reserved; interpretation unverified"},
+    {"id": 42, "name": "Bak22", "data_type": "binary", "len": 10, "type": "status_writable", "desc": "Reserved; interpretation unverified"},
+    {"id": 43, "name": "Bak23", "data_type": "binary", "len": 10, "type": "status_writable", "desc": "Reserved; interpretation unverified"},
+    {"id": 44, "name": "Bak24", "data_type": "binary", "len": 25, "type": "status_writable", "desc": "Reserved; interpretation unverified"},
+    {"id": 45, "name": "Bak25", "data_type": "binary", "len": 50, "type": "status_writable", "desc": "Reserved; interpretation unverified"},
+    {"id": 46, "name": "Bak26", "data_type": "binary", "len": 50, "type": "status_writable", "desc": "Reserved; interpretation unverified"}
   ],
   "mode_values": {
     "0": "water_flow",
@@ -52,6 +68,7 @@
     "4": "exit_feed",
     "5": "on"
   },
+  "full_status_offsets_note": "Historical offsets; parse using data-point flags and lengths.",
   "full_status_offsets": {
     "device_id": {"offset": 21, "len": 12, "type": "ascii"},
     "power_byte": {"offset": 33, "len": 1, "type": "uint8", "note": "ALWAYS 0x01 — NOT reliable"},
@@ -62,10 +79,10 @@
     "interval": {"offset": 47, "len": 1, "type": "uint8", "unit": "s"},
     "ch1_rpm": {"offset": 921, "len": 2, "type": "uint16be"},
     "ch1_voltage": {"offset": 923, "len": 2, "type": "uint16be", "divisor": 100},
-    "ch1_power": {"offset": 926, "len": 1, "type": "uint8", "unit": "W"},
+    "ch1_power": {"offset": 926, "len": 1, "type": "uint8", "note": "Unscaled electrical byte; watt interpretation unverified"},
     "ch2_rpm": {"offset": 930, "len": 2, "type": "uint16be"},
     "ch2_voltage": {"offset": 932, "len": 2, "type": "uint16be", "divisor": 100},
-    "ch2_power": {"offset": 935, "len": 1, "type": "uint8", "unit": "W"}
+    "ch2_power": {"offset": 935, "len": 1, "type": "uint8", "note": "Unscaled electrical byte; watt interpretation unverified"}
   },
   "compact_telemetry_offsets": {
     "mode": {"offset": 5, "type": "uint8"},

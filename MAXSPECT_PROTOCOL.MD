@@ -1,3 +1,12 @@
+> **September 2026 correction (XF350CE hardware test):** `0x11` is WRITE,
+> `0x12` is READ, and `0x13` is READ RESPONSE. Older read examples below
+> incorrectly label `0x11` as a read and must not be used. This explains the
+> settings changes described in the historical experiments. Corrected local
+> Mode writes were confirmed by device reports: feeding 2, resume 4 → mode 1.
+> The former power-byte-to-watt assumption is also unverified; the integration
+> now exposes those values as raw diagnostics. The historical notes below are
+> retained as research history, not a verified implementation specification.
+
 # Maxspect XF330CE Gyre — Gizwits LAN Protocol
 
 > Reverse-engineered from live captures against a Maxspect XF330CE Double
