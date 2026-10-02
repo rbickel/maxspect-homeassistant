@@ -22,8 +22,8 @@ from .api import (
     MaxspectClient,
     MaxspectConnectionError,
     MaxspectDeviceState,
-    _parse_compact_telemetry,
-    _parse_state_notify,
+    _mode_from_report,
+    _mode_matches_request,
 )
 from .cloud import GizwitsCloudClient, GizwitsCloudError
 from .const import (
@@ -42,6 +42,7 @@ from .const import (
     GIZWITS_KNOWN_PRODUCT_KEYS,
     MODE_OFF,
     MODE_ON,
+    MODE_NAMES,
     PRODUCT_KEY_TO_DEVICE_TYPE,
 )
 
@@ -77,6 +78,9 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         self.settings_received: dict = {}
         self.refresh_status = "Saved values; awaiting device report"
         self._program_refresh_lock = asyncio.Lock()
+        self._control_lock = asyncio.Lock()
+        self._local_pending_mode: int | None = None
+        self._program_generation = 0
 
         for dp_id, field_name in ((20, "model_a"), (21, "model_b")):
             model = entry.options.get(field_name, -1)
@@ -110,7 +114,6 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         return PRODUCT_KEY_TO_DEVICE_TYPE.get(pk, DEVICE_TYPE_GYRE)
 
     def _on_device_push(self) -> None:
-        self._remember_settings(self.client.last_report_attrs)
         if self.device_type != DEVICE_TYPE_GYRE:
             # LAN telemetry parsing is Gyre-specific; non-Gyre state comes
             # from cloud seeding only — ignore raw LAN pushes.
@@ -118,9 +121,17 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 "Ignoring LAN push for non-Gyre device type=%s", self.device_type
             )
             return
+        self._remember_settings(self.client.last_report_attrs)
+        reported_mode = _mode_from_report(self.client.last_report_attrs)
+        if (
+            self._local_pending_mode is not None and reported_mode is not None
+            and _mode_matches_request(self._local_pending_mode, reported_mode)
+        ):
+            self._pending_mode = self.client.state.mode
+            self._write_lock_until = 0.0
         if time.monotonic() < self._write_lock_until:
             state = self.client.state
-            if state.mode == self._pending_mode:
+            if reported_mode is not None and _mode_matches_request(self._pending_mode, reported_mode):
                 # Device confirmed our write via LAN — lift cooldown early.
                 _LOGGER.debug(
                     "Device confirmed mode=%d via LAN, lifting write cooldown",
@@ -154,15 +165,28 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
     async def async_set_mode(self, mode: int) -> None:
         """Use confirmed LAN control when selected, with cloud fallback."""
-        if self.config_entry.options.get("local_control", False):
+        if type(mode) is not int or mode not in MODE_NAMES:
+            _LOGGER.error("Unsupported Gyre mode: %r", mode)
+            raise ValueError("Unsupported Gyre mode")
+        async with self._control_lock:
+            await self._async_set_mode(mode)
+
+    async def _async_set_mode(self, mode: int) -> None:
+        if self.device_type == DEVICE_TYPE_GYRE and self.config_entry.options.get("local_control", False):
+            self._local_pending_mode = mode
             try:
                 await self.client.async_set_mode(mode)
             except (MaxspectConnectionError, OSError) as err:
                 _LOGGER.warning("LAN control failed; trying cloud: %s", err)
             else:
+                self._pending_mode = self.client.state.mode
+                self._write_lock_until = 0.0
                 self.async_set_updated_data(self.client.state)
                 return
+            finally:
+                self._local_pending_mode = None
         if self.cloud is None:
+            _LOGGER.error("Cloud control unavailable: credentials not configured")
             raise GizwitsCloudError("Cloud credentials not configured")
         try:
             await self.cloud.async_set_mode(mode, did=self._cloud_did)
@@ -178,6 +202,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
         state = self.client.state
         state.mode = mode
         state.is_on = mode != MODE_OFF
+        state.generic_attrs["Mode"] = mode
         self.async_set_updated_data(state)
 
     async def async_seed_from_cloud(self) -> None:
@@ -199,50 +224,12 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             return
 
         state = self.client.state
-        state.generic_attrs.update(attrs)
-        self._remember_settings(attrs, fresh=False)
-
         if self.device_type == DEVICE_TYPE_GYRE:
-            # Compact telemetry (mode, RPM, voltage, power)
-            bak24 = attrs.get("Bak24")
-            if bak24:
-                try:
-                    _parse_compact_telemetry(bytes.fromhex(bak24), state)
-                except (ValueError, TypeError):
-                    _LOGGER.debug("Could not parse cloud Bak24: %s", bak24)
-
-            # Timestamp
-            time_hex = attrs.get("Time")
-            if time_hex:
-                try:
-                    self.client.apply_attributes({"Time": time_hex})
-                except (ValueError, TypeError):
-                    _LOGGER.debug("Could not parse cloud Time: %s", time_hex)
-
-            # Scalar config attributes
-            for attr_name, field_name in (
-                ("Mode", "mode"),
-                ("Time_Feed", "feed_duration"),
-                ("Wash", "wash_reminder"),
-            ):
-                val = attrs.get(attr_name)
-                if val is not None and (attr_name != "Time_Feed" or 5 <= int(val) <= 120):
-                    setattr(state, field_name, int(val))
-
-            # Model attributes are immutable - only set once
-            if not state._model_initialized:
-                for attr_name, field_name, dp_id in (
-                    ("Model_A", "model_a", 20),
-                    ("Model_B", "model_b", 21),
-                ):
-                    val = attrs.get(attr_name)
-                    if val in (0, 1) and dp_id not in state._initialized_models:
-                        setattr(state, field_name, int(val))
-                        state._initialized_models.add(dp_id)
-                if state._initialized_models == {20, 21}:
-                    state._model_initialized = True
-
-            state.is_on = state.mode != MODE_OFF
+            attrs = self.client.apply_attributes({
+                key: value for key, value in attrs.items()
+                if key not in self.client.received_attribute_names
+            })
+            self._remember_settings(attrs, fresh=False)
             _LOGGER.debug("Seeded Gyre state from cloud: mode=%d is_on=%s", state.mode, state.is_on)
         else:
             # Non-Gyre devices: store all cloud attrs and derive is_on/mode
@@ -253,7 +240,7 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 "Cloud seed for %s (did=%s): received %d attrs: %s",
                 self.device_type, self._cloud_did, len(attrs), attrs,
             )
-            state.generic_attrs = dict(attrs)
+            state.generic_attrs.update(attrs)
             val = attrs.get(mode_attr)
             if val is not None:
                 state.is_on = int(val) != off_val
@@ -282,8 +269,14 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
                 continue
             value = attrs[key]
             if key in ("Manual", "Auto") and not decode_program(value, scheduled=key == "Auto"):
+                _LOGGER.debug("Ignoring invalid or empty %s program", key)
                 continue
-            if key == "Time_Feed" and (not isinstance(value, int) or not 5 <= value <= 120):
+            ranges = {"Time_Feed": (5, 120), "Model_A": (0, 1), "Model_B": (0, 1),
+                      "Wash": (0, 255), "Version_Firmware": (0, 255)}
+            if key in ranges and (
+                type(value) is not int or not ranges[key][0] <= value <= ranges[key][1]
+            ):
+                _LOGGER.warning("Not saving invalid %s=%r", key, value)
                 continue
             if key == "Serial_Number":
                 serial = decode_serial_number(value)
@@ -298,6 +291,8 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
             self.saved_settings[key] = value
             if fresh:
                 self.settings_received[key] = dt_util.utcnow().isoformat()
+                if key == "Auto":
+                    self._program_generation += 1
             changed = True
         if changed:
             self._program_store.async_delay_save(
@@ -319,27 +314,28 @@ class MaxspectCoordinator(DataUpdateCoordinator[MaxspectDeviceState]):
 
     async def async_refresh_program(self) -> None:
         """Request a fresh report; never clear saved data on missing responses."""
-        import asyncio
         async with self._program_refresh_lock:
-            before = self.settings_received.get("Auto")
+            before = self._program_generation
             self.refresh_status = "Requesting schedule from controller"
             self.async_set_updated_data(self.client.state)
             try:
                 await self.client.async_request_full_status()
                 for _ in range(10):
                     await asyncio.sleep(1)
-                    if self.settings_received.get("Auto") != before:
+                    if self._program_generation != before:
                         self.refresh_status = "Schedule received from controller"
                         break
                 else:
                     await self.async_seed_from_cloud()
                     self.refresh_status = (
-                        "Schedule received from controller" if self.settings_received.get("Auto") != before
+                        "Schedule received from controller" if self._program_generation != before
                         else "No fresh schedule received; saved values retained"
                     )
             except (MaxspectConnectionError, OSError) as err:
                 self.refresh_status = "Refresh failed; saved values retained"
                 _LOGGER.warning("Program refresh failed: %s", err)
+                self.async_set_updated_data(self.client.state)
+                raise UpdateFailed(f"Program refresh failed: {err}") from err
             self.async_set_updated_data(self.client.state)
 
     async def async_set_power(self, on: bool) -> None:

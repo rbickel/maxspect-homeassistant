@@ -23,7 +23,7 @@ import logging
 import struct
 import time
 from datetime import datetime, timedelta
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -49,6 +49,8 @@ from .const import (
     MODE_OFF,
     MODE_ON,
     MODE_EXIT_FEED,
+    MODE_PROGRAMMING,
+    MODE_WATER_FLOW,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -181,6 +183,28 @@ def _build_write_payload(dp_id: int, value: int) -> bytes:
     return bytes([ACTION_WRITE]) + _dp_attr_flags(dp_id) + bytes([value & 0xFF])
 
 
+def _mode_matches_request(requested: int, reported: int) -> bool:
+    if requested in (MODE_ON, MODE_EXIT_FEED):
+        return reported in (MODE_WATER_FLOW, MODE_PROGRAMMING, MODE_ON)
+    return requested == reported
+
+
+def _mode_from_report(attrs: Mapping[str, Any]) -> int | None:
+    mode = attrs.get("Mode")
+    if type(mode) is int and mode in MODE_NAMES:
+        return mode
+    telemetry = attrs.get("Bak24")
+    if isinstance(telemetry, str):
+        try:
+            data = bytes.fromhex(telemetry)
+        except ValueError:
+            _LOGGER.warning("Invalid Bak24 hex in mode report")
+            return None
+        if data and data[0] in MODE_NAMES:
+            return data[0]
+    return None
+
+
 # -- Push payload parsing ----------------------------------------------
 
 
@@ -248,6 +272,7 @@ class MaxspectClient:
         self._host = host
         self._port = port
         self.last_report_attrs: dict[str, Any] = {}
+        self.received_attribute_names: set[str] = set()
         self._clock_reference: tuple[datetime, float] | None = None
         self._clock_payload: str | None = None
         self._reader: asyncio.StreamReader | None = None
@@ -441,51 +466,93 @@ class MaxspectClient:
             offset += length
         if not attrs:
             return
-        self.last_report_attrs = attrs
-        self.apply_attributes(attrs)
-        if "Mode" in attrs or "Bak24" in attrs:
-            self._reported_mode = self._state.mode
+        self.last_report_attrs = self.apply_attributes(attrs)
+        self.received_attribute_names.update(self.last_report_attrs)
+        reported_mode = _mode_from_report(self.last_report_attrs)
+        if reported_mode is not None:
+            self._reported_mode = reported_mode
             self._mode_event.set()
         self._state_event.set()
         if self._update_callback:
             self._update_callback()
 
-    def apply_attributes(self, attrs: dict[str, Any]) -> None:
-        """Merge named device attributes without discarding previous reports."""
-        self._state.generic_attrs.update(attrs)
+    def apply_attributes(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Validate and merge named attributes, preserving existing valid values."""
+        accepted = dict(attrs)
         state = self._state
+        for name, low, high in (("Mode", 0, 5), ("Time_Feed", 5, 120), ("Wash", 0, 255)):
+            if name not in accepted:
+                continue
+            value = accepted[name]
+            if type(value) is not int or not low <= value <= high:
+                _LOGGER.warning("Ignoring invalid %s=%r from %s", name, value, self._host)
+                accepted.pop(name)
+        for dp, name in ((20, "Model_A"), (21, "Model_B")):
+            if name in accepted and (
+                type(accepted[name]) is not int or accepted[name] not in (0, 1)
+            ):
+                _LOGGER.warning(
+                    "Ignoring invalid model DP %d=%r from %s (expected 0 or 1)",
+                    dp, accepted[name], self._host,
+                )
+                accepted.pop(name)
         for name, parser in (("Bak24", _parse_compact_telemetry), ("Time", _parse_state_notify)):
-            value = attrs.get(name)
-            if isinstance(value, str):
-                try:
-                    parser(bytes.fromhex(value), state)
-                    if name == "Time" and value != self._clock_payload:
-                        raw = bytes.fromhex(value)
-                        if len(raw) == 7:
-                            clock = datetime(2000 + raw[1], *raw[2:])
-                            self._clock_reference = (clock, time.monotonic())
-                            self._clock_payload = value
-                except ValueError:
-                    _LOGGER.debug("Invalid hex in %s", name)
-        mode = attrs.get("Mode")
-        if isinstance(mode, int) and mode in MODE_NAMES:
+            if name not in accepted:
+                continue
+            value = accepted[name]
+            try:
+                if not isinstance(value, str):
+                    raise ValueError("expected hex string")
+                raw = bytes.fromhex(value)
+                if name == "Bak24":
+                    if len(raw) < 17 or raw[0] not in MODE_NAMES:
+                        raise ValueError("invalid telemetry length or mode")
+                    parser(raw, state)
+                    program_mode = accepted.get("Mode", state.generic_attrs.get("Mode"))
+                    # Bak24's ON status does not replace an explicit running program mode.
+                    if raw[0] == MODE_ON and program_mode in (MODE_WATER_FLOW, MODE_PROGRAMMING):
+                        state.mode = program_mode
+                        state.last_active_mode = program_mode
+                else:
+                    if len(raw) != 7 or raw[1] > 99:
+                        raise ValueError("invalid timestamp length or year")
+                    clock = datetime(2000 + raw[1], *raw[2:])
+                    parser(raw, state)
+                    if value != self._clock_payload:
+                        self._clock_reference = (clock, time.monotonic())
+                        self._clock_payload = value
+            except ValueError as err:
+                _LOGGER.warning("Ignoring invalid %s from %s: %s", name, self._host, err)
+                accepted.pop(name)
+        mode = accepted.get("Mode")
+        if mode is not None:
             state.mode = mode
             state.is_on = mode != MODE_OFF
             if state.is_on:
                 state.last_active_mode = mode
-        duration = attrs.get("Time_Feed")
-        if isinstance(duration, int) and 5 <= duration <= 120:
+        duration = accepted.get("Time_Feed")
+        if duration is not None:
             state.feed_duration = duration
-        wash = attrs.get("Wash")
-        if isinstance(wash, int) and 0 <= wash <= 255:
+        wash = accepted.get("Wash")
+        if wash is not None:
             state.wash_reminder = wash
         for dp, name, field_name in ((20, "Model_A", "model_a"), (21, "Model_B", "model_b")):
-            value = attrs.get(name)
-            if value in (0, 1) and not state._model_initialized and dp not in state._initialized_models:
+            if name not in accepted:
+                continue
+            value = accepted[name]
+            cached = getattr(state, field_name)
+            if not state._model_initialized and dp not in state._initialized_models:
                 setattr(state, field_name, value)
                 state._initialized_models.add(dp)
+            elif value != cached:
+                _LOGGER.warning(
+                    "Device %s reported model DP %d=%d, which differs from cached %d; keeping cached model",
+                    self._host, dp, value, cached,
+                )
         if state._initialized_models == {20, 21}:
             state._model_initialized = True
+        state.generic_attrs.update(accepted)
+        return accepted
 
     # -- Public API ----------------------------------------------------
 
@@ -500,7 +567,7 @@ class MaxspectClient:
         if not self.connected:
             await self.async_connect()
         assert self._writer is not None
-        self._writer.write(_build_frame(0x0093, payload=b"\x00\x00\x00\x03" + bytes([ACTION_READ]) + b"\xff" * 6))
+        self._writer.write(_build_frame(0x0093, payload=b"\x00\x00\x00\x03" + READ_CONFIG_DPS))
         self._writer.write(_build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS))
         await self._writer.drain()
 
@@ -541,13 +608,12 @@ class MaxspectClient:
         self._writer.write(_build_frame(CMD_DATA_SEND, payload=payload))
         await self._writer.drain()
         _LOGGER.debug("Sent Mode=%d to %s", mode, self._host)
-        expected = {0, 1, MODE_ON} if mode in (MODE_ON, MODE_EXIT_FEED) else {mode}
         try:
             async with asyncio.timeout(8):
                 while True:
                     await self._mode_event.wait()
                     self._mode_event.clear()
-                    if self._reported_mode in expected:
+                    if self._reported_mode is not None and _mode_matches_request(mode, self._reported_mode):
                         return
         except TimeoutError as err:
             raise MaxspectConnectionError("Device did not confirm the requested mode") from err
