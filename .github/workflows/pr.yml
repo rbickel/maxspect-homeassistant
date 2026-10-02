@@ -30,7 +30,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pytest pytest-asyncio pytest-homeassistant-custom-component
+        run: pip install pytest pytest-asyncio "pytest-homeassistant-custom-component @ git+https://github.com/MatthewFlamm/pytest-homeassistant-custom-component.git@0.13.368"
 
       - name: Run tests
         run: pytest --tb=short -v
