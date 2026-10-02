@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.maxspect.api import MaxspectDeviceState
+from custom_components.maxspect.api import MaxspectClient, MaxspectDeviceState
 from custom_components.maxspect.const import (
     CONF_CLOUD_DEVICE_NAME,
     CONF_CLOUD_DID,
@@ -169,6 +169,16 @@ def mock_lan_client() -> MagicMock:
         model_b=0,
         wash_reminder=7,
     )
+    client.state._model_initialized = True
+    client.state._initialized_models = {20, 21}
+    client.state.generic_attrs.update(GYRE_CLOUD_ATTRS_ON)
+    parser = MaxspectClient("192.0.2.1")
+    parser._state = client.state
+    client.last_report_attrs = {}
+    client.received_attribute_names = set()
+    client.lan_status_available = True
+    client.apply_attributes = MagicMock(side_effect=parser.apply_attributes)
+    client.controller_time_now = MagicMock(side_effect=parser.controller_time_now)
     client.async_connect = AsyncMock()
     client.async_disconnect = AsyncMock()
     client.async_validate_connection = AsyncMock()

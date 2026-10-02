@@ -19,6 +19,7 @@ pytestmark = pytest.mark.integration
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -42,7 +43,7 @@ class TestGizwitsSetup:
         mock_gizwits_cloud: AsyncMock,
         gyre_config_entry: MockConfigEntry,
     ) -> None:
-        """Full Gizwits setup: connect, cloud login, cloud seed, platforms loaded."""
+        """Healthy LAN setup loads platforms without contacting the cloud."""
         await setup_integration(hass, gyre_config_entry)
 
         assert gyre_config_entry.state is ConfigEntryState.LOADED
@@ -50,8 +51,9 @@ class TestGizwitsSetup:
         # Verify client was connected
         mock_maxspect_client.async_connect.assert_awaited_once()
 
-        # Verify cloud login was called
-        mock_gizwits_cloud.async_login.assert_awaited_once()
+        mock_maxspect_client.async_request_status.assert_awaited_once()
+        mock_gizwits_cloud.async_login.assert_not_awaited()
+        mock_gizwits_cloud.async_get_device_status.assert_not_awaited()
 
         # Verify coordinator is stored as runtime_data
         coordinator = gyre_config_entry.runtime_data
@@ -59,14 +61,14 @@ class TestGizwitsSetup:
         assert coordinator.data is not None
         assert coordinator.data.is_on is True
 
-    async def test_setup_lan_failure_raises_not_ready(
+    async def test_setup_lan_failure_uses_cloud_fallback(
         self,
         hass: HomeAssistant,
         mock_maxspect_client: MagicMock,
         mock_gizwits_cloud: AsyncMock,
         gyre_config_entry: MockConfigEntry,
     ) -> None:
-        """LAN connect failure → ConfigEntryNotReady, entry in SETUP_RETRY."""
+        """LAN connection failure loads the entry when cloud status is available."""
         mock_maxspect_client.async_connect.side_effect = MaxspectConnectionError(
             "Connection refused"
         )
@@ -75,6 +77,17 @@ class TestGizwitsSetup:
         await hass.config_entries.async_setup(gyre_config_entry.entry_id)
         await hass.async_block_till_done()
 
+        assert gyre_config_entry.state is ConfigEntryState.LOADED
+        mock_gizwits_cloud.async_get_device_status.assert_awaited_once()
+
+    async def test_setup_both_channels_failed_retries(
+        self, hass, mock_maxspect_client, mock_gizwits_cloud, gyre_config_entry,
+    ) -> None:
+        mock_maxspect_client.async_connect.side_effect = MaxspectConnectionError("LAN offline")
+        mock_gizwits_cloud.async_get_device_status.side_effect = GizwitsCloudError("Cloud offline")
+        gyre_config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(gyre_config_entry.entry_id)
+        await hass.async_block_till_done()
         assert gyre_config_entry.state is ConfigEntryState.SETUP_RETRY
 
     async def test_setup_cloud_login_failure_still_loads(
@@ -171,7 +184,7 @@ class TestEntityRegistration:
         """Gyre setup creates the expected switch and sensor entities."""
         await setup_integration(hass, gyre_config_entry)
 
-        entity_registry = hass.helpers.entity_registry.async_get()
+        entity_registry = er.async_get(hass)
         # Look up entities by unique_id prefix
         entries = [
             e for e in entity_registry.entities.values()
@@ -234,13 +247,20 @@ class TestICV6Setup:
             assert icv6_config_entry.state is ConfigEntryState.LOADED
 
             # Verify the hub device was registered
-            device_registry = hass.helpers.device_registry.async_get()
-            hub_device = device_registry.async_get_device(
-                identifiers={(DOMAIN, "icv6_192.168.50.247")}
+            device_registry = dr.async_get(hass)
+            hub_device = next(
+                (device for device in dr.async_entries_for_config_entry(
+                    device_registry, icv6_config_entry.entry_id
+                )
+                 if (DOMAIN, "icv6_192.168.50.247") in device.identifiers),
+                None,
             )
 
             assert hub_device is not None
             assert hub_device.name == "ICV6 Hub (192.168.50.247)"
             assert hub_device.manufacturer == "Maxspect"
             assert hub_device.model == "ICV6 Controller"
-            assert hub_device.config_entries == {icv6_config_entry.entry_id}
+            if hasattr(hub_device, "config_entry_id"):
+                assert hub_device.config_entry_id == icv6_config_entry.entry_id
+            else:
+                assert hub_device.config_entries == {icv6_config_entry.entry_id}

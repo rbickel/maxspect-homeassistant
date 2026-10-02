@@ -1,0 +1,123 @@
+title: Gyre pumps
+views:
+- title: Gyre pumps
+  path: overview
+  icon: mdi:waves
+  cards:
+  - type: entities
+    title: Controller and feeding
+    show_header_toggle: false
+    entities:
+    - entity: sensor.maxspect_pumps_mode
+      name: Operating mode
+    - entity: sensor.maxspect_pumps_feed_duration
+      name: Feeding pause duration
+    - entity: sensor.maxspect_pumps_feeding_time_remaining
+      name: Feeding time remaining
+    - entity: button.maxspect_pumps_start_feeding_pause
+      name: Start feeding pause
+    - entity: button.maxspect_pumps_resume_pumps
+      name: Resume pumps
+  - type: entities
+    title: Pump sensors
+    show_header_toggle: false
+    entities:
+    - type: section
+      label: Pump A
+    - entity: binary_sensor.maxspect_pumps_pump_a_connected
+      name: Connection
+    - entity: binary_sensor.maxspect_pumps_pump_a_error
+      name: Error status
+    - entity: sensor.maxspect_pumps_channel_1_rpm
+      name: Motor speed
+    - entity: sensor.maxspect_pumps_channel_1_power_raw
+      name: Power reading (raw)
+    - type: section
+      label: Pump B
+    - entity: binary_sensor.maxspect_pumps_pump_b_connected
+      name: Connection
+    - entity: binary_sensor.maxspect_pumps_pump_b_error
+      name: Error status
+    - entity: sensor.maxspect_pumps_channel_2_rpm
+      name: Motor speed
+    - entity: sensor.maxspect_pumps_channel_2_power_raw
+      name: Power reading (raw)
+  - type: entities
+    title: Current program settings
+    show_header_toggle: false
+    entities:
+    - type: section
+      label: Pump A
+    - entity: sensor.maxspect_pumps_pump_a_active_pattern
+      name: Active pattern
+    - entity: sensor.maxspect_pumps_pump_a_programmed_power
+      name: Programmed output
+    - type: section
+      label: Pump B
+    - entity: sensor.maxspect_pumps_pump_b_active_pattern
+      name: Active pattern
+    - entity: sensor.maxspect_pumps_pump_b_programmed_power
+      name: Programmed output
+    - entity: button.maxspect_pumps_refresh_schedule_and_settings
+      name: Refresh schedule and settings
+  - type: markdown
+    content: '## Daily schedule
+
+      Each row applies until the next start time. After the last row, the schedule
+      repeats at midnight.
+
+
+      | Start | Pump A pattern | A setting | Pump B pattern | B setting |
+
+      |:--|:--|--:|:--|--:|
+
+      {% for entry in state_attr(''sensor.maxspect_pumps_saved_schedule'', ''entries'')
+      or [] %}| {{ entry.time }} | {{ entry.a.pattern }} | {{ entry.a.signed_power_percent
+      }}%{% if ''alternate_power_percent'' in entry.a %} / {{ entry.a.alternate_power_percent
+      }}%{% endif %} | {{ entry.b.pattern }} | {{ entry.b.signed_power_percent }}%{%
+      if ''alternate_power_percent'' in entry.b %} / {{ entry.b.alternate_power_percent
+      }}%{% endif %} |
+
+      {% endfor %}
+
+
+      Positive and negative percentages indicate rotation direction. Percentages are
+      programmed output levels; pulsing, random and alternating patterns vary output
+      over time. They are not measured watts.
+
+      '
+  - type: markdown
+    content: '## How values are renewed
+
+      The last received schedule and settings are saved in Home Assistant and survive
+      restarts. Refresh only reads the controller; it does not change the program,
+      speed or feeding duration.
+
+
+      Home Assistant receives pushes, reads timestamp/status every three seconds,
+      requests settings over the local network every minute and saves valid reports
+      automatically. LAN commands are enabled by default; cloud is a fallback when
+      LAN cannot provide status or confirm a command.
+
+
+      Use **Refresh schedule and settings** to request a new report. The refresh status
+      says whether a new schedule arrived. If it does not arrive, the saved values
+      remain available. Opening this Gyre in Syna-G can also trigger a full report,
+      which Home Assistant saves automatically.
+
+
+      **Last schedule report:** {{ state_attr(''sensor.maxspect_pumps_saved_schedule'',
+      ''last_schedule_received'') or ''No confirmed device report yet'' }}
+
+
+      **Refresh result:** {{ states(''sensor.maxspect_pumps_schedule_refresh_status'')
+      }}
+
+
+      The active pattern is calculated from the saved program and the controller clock.
+      Until the controller reports its clock after a restart, Home Assistant uses
+      its local time. In Feed or Off mode there is no active running pattern. Settings
+      changed while Home Assistant cannot receive reports remain stale until the next
+      successful refresh.
+
+      '

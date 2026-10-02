@@ -1,10 +1,8 @@
 """Gizwits Cloud REST API client for Maxspect devices.
 
 Handles authentication, token management, and device control via the
-Gizwits Open API.  Used for writing commands (Mode changes etc.) since
-the Gizwits LAN protocol writes are ignored by the Maxspect MCU firmware.
-
-Read/status monitoring stays on the LAN client for speed and locality.
+Gizwits Open API. Provides cloud control and fallback for optional confirmed
+Gyre LAN commands. Cloud status supplements attributes received over LAN.
 """
 
 from __future__ import annotations

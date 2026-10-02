@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceInfo, CONNECTION_NETWORK_MAC, format_mac
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -12,6 +14,7 @@ from .const import (
     PRODUCT_KEY_TO_MODEL_NAME,
 )
 from .coordinator import MaxspectCoordinator
+from .gyre_program import decode_serial_number
 
 
 class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
@@ -24,7 +27,10 @@ class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
         host = coordinator.client.host
         device_id = coordinator.config_entry.unique_id or host
         pk = coordinator.config_entry.data.get(CONF_CLOUD_PRODUCT_KEY, "")
-        model = PRODUCT_KEY_TO_MODEL_NAME.get(pk, "Gyre XF330CE")
+        model = PRODUCT_KEY_TO_MODEL_NAME.get(pk, "Maxspect device")
+        options = coordinator.config_entry.options
+        if pk == "cd01d1f3ab2647ea9da51e045cf53d61" and options.get("model_a") == options.get("model_b"):
+            model = {0: "Gyre XF330CE", 1: "Gyre XF350CE"}.get(options.get("model_a"), model)
         cloud_name = coordinator.config_entry.data.get(CONF_CLOUD_DEVICE_NAME, "")
         device_name = f"Maxspect {cloud_name}" if cloud_name else f"Maxspect {host}"
         self._attr_device_info = DeviceInfo(
@@ -33,6 +39,41 @@ class MaxspectEntity(CoordinatorEntity[MaxspectCoordinator]):
             manufacturer="Maxspect",
             model=model,
         )
+        serial = decode_serial_number(coordinator.client.state.generic_attrs.get("Serial_Number"))
+        if serial:
+            self._attr_device_info["serial_number"] = serial
+        mac = options.get("device_mac")
+        if mac:
+            self._attr_device_info["connections"] = {(CONNECTION_NETWORK_MAC, format_mac(mac))}
+        if version := options.get("firmware_version"):
+            self._attr_device_info["sw_version"] = version
+
+
+class MaxspectReportedEntity(MaxspectEntity):
+    """Hide unreported diagnostics while keeping them enabled for future reports."""
+
+    @property
+    def report_missing(self) -> bool:
+        return self.coordinator.data.generic_attrs.get(self._key) is None
+
+    @callback
+    def _sync_visibility(self) -> None:
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        if entry is None or entry.hidden_by == er.RegistryEntryHider.USER:
+            return
+        hidden = er.RegistryEntryHider.INTEGRATION if self.report_missing else None
+        if entry.hidden_by != hidden:
+            registry.async_update_entity(self.entity_id, hidden_by=hidden)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._sync_visibility()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._sync_visibility()
+        super()._handle_coordinator_update()
 
 
 # ---------------------------------------------------------------------------

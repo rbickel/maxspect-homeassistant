@@ -7,7 +7,8 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.core import callback
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -28,11 +29,14 @@ from .const import (
     CONF_DEVICE_PROTOCOL,
     DEFAULT_CLOUD_REGION,
     DEFAULT_PORT,
+    DEFAULT_LOCAL_CONTROL,
     DEVICE_PROTOCOL_GIZWITS,
     DEVICE_PROTOCOL_ICV6,
+    DEVICE_TYPE_GYRE,
     DOMAIN,
     GIZWITS_APP_ID,
     GIZWITS_KNOWN_PRODUCT_KEYS,
+    PRODUCT_KEY_TO_DEVICE_TYPE,
 )
 from .icv6_api import ICV6Client, ICV6ConnectionError, ICV6_TCP_PORT
 
@@ -86,6 +90,11 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialise flow state."""
         self._protocol: str = DEVICE_PROTOCOL_GIZWITS
         self._lan_data: dict[str, Any] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> MaxspectOptionsFlow:
+        return MaxspectOptionsFlow()
 
     # ------------------------------------------------------------------
     # Step 1: device-type selection
@@ -234,5 +243,43 @@ class MaxspectConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="cloud",
             data_schema=STEP_CLOUD_DATA_SCHEMA,
+            errors=errors,
+        )
+
+
+class MaxspectOptionsFlow(OptionsFlow):
+    """Allow owners to identify pumps when firmware metadata is unreliable."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if (
+            self.config_entry.data.get(CONF_DEVICE_PROTOCOL) == DEVICE_PROTOCOL_ICV6
+            or PRODUCT_KEY_TO_DEVICE_TYPE.get(
+                self.config_entry.data.get(CONF_CLOUD_PRODUCT_KEY, ""), DEVICE_TYPE_GYRE
+            ) != DEVICE_TYPE_GYRE
+        ):
+            return self.async_abort(reason="options_not_supported")
+        models = {-1: "Automatic", 0: "XF330CE", 1: "XF350CE"}
+        schema = {
+                vol.Required(key, default=self.config_entry.options.get(key, -1)): vol.In(models)
+                for key in ("model_a", "model_b")
+        }
+        schema[vol.Required("local_control", default=self.config_entry.options.get("local_control", DEFAULT_LOCAL_CONTROL))] = bool
+        schema[vol.Optional("device_mac", default=self.config_entry.options.get("device_mac", ""))] = vol.Any(
+            "", vol.Match(r"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"),
+        )
+        schema[vol.Optional("firmware_version", default=self.config_entry.options.get("firmware_version", ""))] = str
+        data_schema = vol.Schema(schema)
+        errors = {}
+        if user_input is not None:
+            try:
+                validated = data_schema(user_input)
+            except vol.Invalid as err:
+                _LOGGER.warning("Invalid Gyre options: %s", err)
+                errors["base"] = "invalid_options"
+            else:
+                return self.async_create_entry(title="", data=validated)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=data_schema,
             errors=errors,
         )

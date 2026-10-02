@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -50,10 +50,13 @@ from custom_components.maxspect.api import (
 )
 from custom_components.maxspect.const import (
     ACTION_DEVICE_REPORT,
+    ACTION_READ,
+    ACTION_READ_ACK,
     ATTR_FLAGS_LEN,
     CMD_BIND_ACK,
     CMD_BIND_REQ,
     CMD_DATA_RECV,
+    CMD_DATA_SEND,
     CMD_DEV_INFO_REQ,
     CMD_DEV_INFO_RESP,
     CMD_HEARTBEAT_REQ,
@@ -64,6 +67,8 @@ from custom_components.maxspect.const import (
     MODE_ON,
     MODE_WATER_FLOW,
 )
+
+from .protocol_helpers import build_full_status_payload
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +137,7 @@ def _mode_update_push(mode: int) -> bytes:
 class FakeGizwitsDevice:
     """A mock Gizwits device that responds to the handshake and sends pushes."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, read_responses: bool = False) -> None:
         self._server: asyncio.Server | None = None
         self._writer: asyncio.StreamWriter | None = None
         self.port: int = 0
@@ -140,6 +145,10 @@ class FakeGizwitsDevice:
         self._push_event = asyncio.Event()
         self._connected = asyncio.Event()
         self._handshake_done = asyncio.Event()
+        self._heartbeat_received = asyncio.Event()
+        self.received_commands: list[int] = []
+        self.received_frames: list[tuple[int, bytes]] = []
+        self.read_responses = read_responses
         self._client_tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
@@ -189,12 +198,14 @@ class FakeGizwitsDevice:
             # Phase 1: DEV_INFO_REQ → respond with DEV_INFO_RESP
             frame = await self._read_frame(reader)
             if frame and frame["cmd"] == CMD_DEV_INFO_REQ:
+                self.received_commands.append(frame["cmd"])
                 writer.write(_build_frame(CMD_DEV_INFO_RESP, BINDING_KEY))
                 await writer.drain()
 
             # Phase 2: BIND_REQ → respond with BIND_ACK
             frame = await self._read_frame(reader)
             if frame and frame["cmd"] == CMD_BIND_REQ:
+                self.received_commands.append(frame["cmd"])
                 writer.write(_build_frame(CMD_BIND_ACK))
                 await writer.drain()
 
@@ -211,8 +222,19 @@ class FakeGizwitsDevice:
                 # Check for incoming frames (heartbeats, polls) with short timeout
                 try:
                     frame = await self._read_frame(reader, timeout=0.2)
+                    if frame:
+                        self.received_commands.append(frame["cmd"])
+                        self.received_frames.append((frame["cmd"], frame["payload"]))
                     if frame and frame["cmd"] == CMD_HEARTBEAT_REQ:
                         writer.write(_build_frame(CMD_HEARTBEAT_RESP))
+                        await writer.drain()
+                        self._heartbeat_received.set()
+                    elif frame and self.read_responses and frame["cmd"] in (CMD_DATA_SEND, 0x0093):
+                        response = bytes([ACTION_READ_ACK]) + build_full_status_payload()[1:]
+                        if frame["cmd"] == 0x0093:
+                            writer.write(_build_frame(0x0094, frame["payload"][:4] + response))
+                        else:
+                            writer.write(_build_frame(CMD_DATA_RECV, response))
                         await writer.drain()
                 except asyncio.TimeoutError:
                     pass
@@ -319,6 +341,7 @@ class TestCompactTelemetry:
         finally:
             await device.stop()
 
+
     async def test_off_mode_telemetry(self) -> None:
         """Compact telemetry with MODE_OFF sets is_on=False."""
         device = FakeGizwitsDevice()
@@ -369,6 +392,87 @@ class TestCompactTelemetry:
 
             await client.async_disconnect()
         finally:
+            await device.stop()
+
+
+class TestLANMonitoring:
+
+    async def test_polling_never_sends_writes_on_connect_or_reconnect(self) -> None:
+        device = FakeGizwitsDevice()
+        await device.start()
+        client = MaxspectClient("127.0.0.1", device.port)
+        updated = asyncio.Event()
+        client.set_update_callback(updated.set)
+
+        try:
+            with patch("custom_components.maxspect.api.HEARTBEAT_INTERVAL", 0.01):
+                for _ in range(2):
+                    device._heartbeat_received.clear()
+                    updated.clear()
+                    await client.async_connect()
+                    await asyncio.wait_for(device._heartbeat_received.wait(), timeout=5)
+                    device.queue_push(_compact_telemetry_push())
+                    await asyncio.wait_for(updated.wait(), timeout=5)
+                    assert client.state.mode == MODE_ON
+                    assert client.state.ch1_rpm == 1500
+                    await client.async_disconnect()
+
+            assert device.received_commands.count(CMD_DEV_INFO_REQ) == 2
+            assert device.received_commands.count(CMD_BIND_REQ) == 2
+            assert device.received_commands.count(CMD_HEARTBEAT_REQ) >= 2
+            assert CMD_DATA_SEND in device.received_commands
+            assert set(device.received_commands) == {
+                CMD_DEV_INFO_REQ, CMD_BIND_REQ, CMD_HEARTBEAT_REQ, CMD_DATA_SEND, 0x0093,
+            }
+            for command, payload in device.received_frames:
+                if command == CMD_DATA_SEND:
+                    assert payload[0] == ACTION_READ == 0x12
+                elif command == 0x0093:
+                    assert payload[4] == ACTION_READ == 0x12
+        finally:
+            await client.async_disconnect()
+            await device.stop()
+
+    async def test_pull_read_response_updates_status_without_autonomous_push(self) -> None:
+        device = FakeGizwitsDevice(read_responses=True)
+        await device.start()
+        client = MaxspectClient("127.0.0.1", device.port)
+        try:
+            state = await client.async_request_status()
+            assert state.mode == MODE_ON
+            assert state.ch1_rpm == 2715
+            assert state.model_a == state.model_b == 0
+            assert client.lan_status_available
+            assert not device._pushes
+        finally:
+            await client.async_disconnect()
+            await device.stop()
+
+    async def test_autonomous_full_status_updates_valid_telemetry_and_models(self) -> None:
+        device = FakeGizwitsDevice()
+        await device.start()
+        client = MaxspectClient("127.0.0.1", device.port, polling=False)
+        updated = asyncio.Event()
+        client.set_update_callback(updated.set)
+
+        try:
+            await client.async_connect()
+            device.queue_push(
+                _build_frame(CMD_DATA_RECV, build_full_status_payload())
+            )
+            await asyncio.wait_for(updated.wait(), timeout=5)
+
+            assert client.state.mode == MODE_ON
+            assert client.state.is_on is True
+            assert client.state.ch1_rpm == 2715
+            assert client.state.ch1_voltage == 23.94
+            assert client.state.ch2_rpm == 2747
+            assert client.state.timestamp == "2026-10-02 16:28:17"
+            assert (client.state.model_a, client.state.model_b) == (0, 0)
+            assert client.state._model_initialized is True
+            assert CMD_DATA_SEND not in device.received_commands
+        finally:
+            await client.async_disconnect()
             await device.stop()
 
 

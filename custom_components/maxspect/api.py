@@ -7,10 +7,11 @@ Push payloads use Gizwits V4 var_len format:
   [action: 1B] [attr_flags: 6B] [dp_data...]
 
 The device pushes data in several message types:
+  - Full status        (1049 bytes) -- fixed-layout state and sensor readings
   - Compact telemetry  (flags[0]=0x10) -- periodic sensor readings
   - State notify        (DP 34 only) -- power state + timestamp
   - Mode updates        (DP 18 flagged) -- mode value changes
-  - Config data         (DPs 35/36) -- program blobs (ignored)
+  - Config data         (DPs 35/36) -- program blobs (raw diagnostics)
 
 See MAXSPECT_PROTOCOL.MD for full protocol documentation.
 """
@@ -20,13 +21,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from collections.abc import Callable
+import time
+from datetime import datetime, timedelta
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
     ACTION_DEVICE_REPORT,
     ACTION_READ,
+    ACTION_READ_ACK,
     ACTION_WRITE,
     ATTR_FLAGS_LEN,
     CMD_BIND_ACK,
@@ -37,24 +41,27 @@ from .const import (
     CMD_DEV_INFO_RESP,
     CMD_HEARTBEAT_REQ,
     CMD_HEARTBEAT_RESP,
+    CONFIG_POLL_INTERVAL,
     DP_LENGTHS,
     FRAME_HEADER,
     HEARTBEAT_INTERVAL,
+    GYRE_DP_NAMES,
     MODE_NAMES,
     MODE_OFF,
     MODE_ON,
+    MODE_EXIT_FEED,
+    MODE_PROGRAMMING,
+    MODE_WATER_FLOW,
     POLL_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# State notify polls DP 34 (Time) -- returns power + timestamp
+# Read payloads use 0x12, never the controller's 0x11 write action.
 READ_STATE_NOTIFY = bytes([ACTION_READ]) + b"\x00\x04\x00\x00\x00\x00"
 
-# Config DPs: 19 (Time_Feed), 20 (Model_A), 21 (Model_B), 22 (Wash)
-# Bits 19-22 are in flags byte index 3 (ATTR_FLAGS_LEN-1 - 19//8 = 6-1-2 = 3)
-# Bits: 19%8=3, 20%8=4, 21%8=5, 22%8=6 → 0b01111000 = 0x78
-READ_CONFIG_DPS = bytes([ACTION_READ]) + b"\x00\x00\x00\x78\x00\x00"
+# Request all 47 schema data points, including settings and diagnostics.
+READ_CONFIG_DPS = bytes([ACTION_READ]) + b"\x7f\xff\xff\xff\xff\xff"
 
 
 class MaxspectConnectionError(Exception):
@@ -83,6 +90,7 @@ class MaxspectDeviceState:
     generic_attrs: dict = field(default_factory=dict)
     # Track if immutable attributes have been initialized
     _model_initialized: bool = field(default=False, init=False, repr=False)
+    _initialized_models: set[int] = field(default_factory=set, init=False, repr=False)
 
     @property
     def mode_name(self) -> str:
@@ -153,7 +161,7 @@ def _dp_is_flagged(flags: bytes, dp_id: int) -> bool:
 
 def _dp_data_offset(flags: bytes, dp_id: int) -> int:
     """Calculate the byte offset of a non-bool DP in the data payload."""
-    offset = 0
+    offset = (sum(_dp_is_flagged(flags, dp) for dp in range(17)) + 7) // 8
     for did in sorted(DP_LENGTHS):
         if did >= dp_id:
             break
@@ -173,8 +181,30 @@ def _dp_attr_flags(dp_id: int) -> bytes:
 
 
 def _build_write_payload(dp_id: int, value: int) -> bytes:
-    """Build a write payload for a uint8 DP: [0x12] [flags (6B)] [value (1B)]."""
+    """Build a write payload for a uint8 DP: [0x11] [flags (6B)] [value (1B)]."""
     return bytes([ACTION_WRITE]) + _dp_attr_flags(dp_id) + bytes([value & 0xFF])
+
+
+def _mode_matches_request(requested: int, reported: int) -> bool:
+    if requested in (MODE_ON, MODE_EXIT_FEED):
+        return reported in (MODE_WATER_FLOW, MODE_PROGRAMMING, MODE_ON)
+    return requested == reported
+
+
+def _mode_from_report(attrs: Mapping[str, Any]) -> int | None:
+    mode = attrs.get("Mode")
+    if type(mode) is int and mode in MODE_NAMES:
+        return mode
+    telemetry = attrs.get("Bak24")
+    if isinstance(telemetry, str):
+        try:
+            data = bytes.fromhex(telemetry)
+        except ValueError:
+            _LOGGER.warning("Invalid Bak24 hex in mode report")
+            return None
+        if data and data[0] in MODE_NAMES:
+            return data[0]
+    return None
 
 
 # -- Push payload parsing ----------------------------------------------
@@ -189,10 +219,10 @@ def _parse_compact_telemetry(
       [0]     mode (0-5)
       [2:4]   ch1_rpm (uint16 BE)
       [4:6]   ch1_voltage (uint16 BE, /100 = volts)
-      [7]     ch1_power (uint8, watts)
+      [7]     ch1_power (uint8, unscaled electrical value)
       [11:13] ch2_rpm (uint16 BE)
       [13:15] ch2_voltage (uint16 BE, /100 = volts)
-      [16]    ch2_power (uint8, watts)
+      [16]    ch2_power (uint8, unscaled electrical value)
     """
     if len(data) < 17:
         return
@@ -226,7 +256,8 @@ def _parse_state_notify(data: bytes, state: MaxspectDeviceState) -> None:
 
     if len(data) >= 7:
         ts = data[1:7]
-        if ts[0] <= 99 and 1 <= ts[1] <= 12 and 1 <= ts[2] <= 31:
+        if (ts[0] <= 99 and 1 <= ts[1] <= 12 and 1 <= ts[2] <= 31
+                and ts[3] <= 23 and ts[4] <= 59 and ts[5] <= 59):
             state.timestamp = (
                 f"20{ts[0]:02d}-{ts[1]:02d}-{ts[2]:02d} "
                 f"{ts[3]:02d}:{ts[4]:02d}:{ts[5]:02d}"
@@ -239,15 +270,26 @@ def _parse_state_notify(data: bytes, state: MaxspectDeviceState) -> None:
 class MaxspectClient:
     """Async TCP client for Maxspect devices using Gizwits LAN protocol."""
 
-    def __init__(self, host: str, port: int = 12416) -> None:
+    def __init__(self, host: str, port: int = 12416, *, polling: bool = True) -> None:
         self._host = host
         self._port = port
+        self.last_report_attrs: dict[str, Any] = {}
+        self.received_attribute_names: set[str] = set()
+        self._clock_reference: tuple[datetime, float] | None = None
+        self._clock_payload: str | None = None
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._connected = False
         self._state = MaxspectDeviceState()
         self._listener_task: asyncio.Task[None] | None = None
         self._state_event = asyncio.Event()
+        self._mode_event = asyncio.Event()
+        self._mode_lock = asyncio.Lock()
+        self._reported_mode: int | None = None
+        self._status_event = asyncio.Event()
+        self._polling = polling
+        self._last_traffic = 0.0
+        self._last_full_read = 0.0
         self._update_callback: Callable[[], None] | None = None
 
     @property
@@ -261,6 +303,13 @@ class MaxspectClient:
     @property
     def connected(self) -> bool:
         return self._connected and self._writer is not None
+
+    @property
+    def lan_status_available(self) -> bool:
+        return (
+            self.connected and self._reported_mode is not None
+            and time.monotonic() - self._last_traffic < HEARTBEAT_INTERVAL * 3
+        )
 
     def set_update_callback(self, callback: Callable[[], None]) -> None:
         self._update_callback = callback
@@ -289,6 +338,10 @@ class MaxspectClient:
             ) from err
 
         self._connected = True
+        self._reported_mode = None
+        self._last_traffic = 0.0
+        self._last_full_read = 0.0
+        self._status_event.clear()
         _LOGGER.debug("Connected to %s:%s", self._host, self._port)
 
         try:
@@ -324,9 +377,11 @@ class MaxspectClient:
 
         _LOGGER.debug("Handshake complete with %s", self._host)
 
-        # Drain delayed duplicate ACK
+        # A report can arrive before the delayed duplicate ACK.
         try:
-            await _read_frame(self._reader, timeout=1)
+            delayed = await _read_frame(self._reader, timeout=1)
+            if delayed is not None and delayed["cmd"] == CMD_DATA_RECV:
+                self._process_push(delayed["payload"])
         except (asyncio.TimeoutError, asyncio.IncompleteReadError):
             pass
 
@@ -354,11 +409,10 @@ class MaxspectClient:
     # -- Background listener -------------------------------------------
 
     async def _listen_loop(self) -> None:
-        """Read frames, send heartbeats, poll for status."""
+        """Receive pushes, poll using the read opcode, and keep the connection alive."""
         loop = asyncio.get_running_loop()
         last_heartbeat = loop.time()
         last_poll = 0.0
-        config_poll_done = False
 
         while self._connected and self._reader and self._writer:
             now = loop.time()
@@ -375,29 +429,20 @@ class MaxspectClient:
                     self._connected = False
                     break
 
-            # Poll state notify for power + timestamp
-            if now - last_poll >= POLL_INTERVAL:
+            if self._polling and now - last_poll >= POLL_INTERVAL:
                 try:
-                    self._writer.write(
-                        _build_frame(CMD_DATA_SEND, payload=READ_STATE_NOTIFY)
-                    )
+                    self._writer.write(_build_frame(CMD_DATA_SEND, READ_STATE_NOTIFY))
                     await self._writer.drain()
                     last_poll = now
-                except OSError:
-                    _LOGGER.warning("Poll send failed to %s", self._host)
+                except OSError as err:
+                    _LOGGER.warning("LAN status poll failed to %s: %s", self._host, err)
                     self._connected = False
                     break
-
-            # Read config DPs (19-22) once per connection
-            if not config_poll_done:
+            if self._polling and now - self._last_full_read >= CONFIG_POLL_INTERVAL:
                 try:
-                    self._writer.write(
-                        _build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS)
-                    )
-                    await self._writer.drain()
-                    config_poll_done = True
-                except OSError:
-                    _LOGGER.warning("Config poll send failed to %s", self._host)
+                    await self.async_request_full_status()
+                except OSError as err:
+                    _LOGGER.warning("LAN settings poll failed to %s: %s", self._host, err)
                     self._connected = False
                     break
 
@@ -413,8 +458,11 @@ class MaxspectClient:
             if resp is None:
                 continue
 
+            self._last_traffic = time.monotonic()
             if resp["cmd"] == CMD_DATA_RECV:
                 self._process_push(resp["payload"])
+            elif resp["cmd"] == 0x0094 and len(resp["payload"]) > 4:
+                self._process_push(resp["payload"][4:])
             elif resp["cmd"] == CMD_HEARTBEAT_RESP:
                 _LOGGER.debug("Heartbeat ACK from %s", self._host)
                 last_heartbeat = loop.time()
@@ -422,123 +470,160 @@ class MaxspectClient:
         _LOGGER.debug("Listener stopped for %s", self._host)
 
     def _process_push(self, payload: bytes) -> None:
-        """Parse a 0x0091 push payload and update state."""
-        if not payload:
-            _LOGGER.debug("Write ACK from %s", self._host)
-            return
-
+        """Merge a variable-length report or read response, including diagnostics."""
         if len(payload) < 7:
+            _LOGGER.debug("Ignoring empty or short report from %s", self._host)
             return
-
-        action = payload[0]
-        flags = payload[1:7]
-        data = payload[7:]
-
-        if action != ACTION_DEVICE_REPORT:
-            _LOGGER.debug(
-                "Non-report action 0x%02x from %s (%dB)",
-                action, self._host, len(payload),
+        if payload[0] not in (ACTION_DEVICE_REPORT, ACTION_READ_ACK):
+            _LOGGER.debug("Ignoring non-report action 0x%02x from %s", payload[0], self._host)
+            return
+        flags, data = payload[1:7], payload[7:]
+        selected = [dp for dp in range(47) if _dp_is_flagged(flags, dp)]
+        bool_dps = [dp for dp in selected if dp < 17]
+        bool_len = (len(bool_dps) + 7) // 8
+        expected = bool_len + sum(DP_LENGTHS[dp] for dp in selected if dp >= 17)
+        if len(data) != expected:
+            _LOGGER.warning(
+                "Ignoring malformed report from %s: %d bytes, expected %d",
+                self._host, len(data), expected,
             )
             return
+        attrs: dict[str, Any] = {}
+        bool_values = int.from_bytes(data[:bool_len], "big")
+        for bit, dp in enumerate(bool_dps):
+            attrs[GYRE_DP_NAMES[dp]] = bool(bool_values & (1 << bit))
+        offset = bool_len
+        for dp in selected:
+            if dp < 17:
+                continue
+            length = DP_LENGTHS[dp]
+            value = data[offset:offset + length]
+            attrs[GYRE_DP_NAMES[dp]] = value[0] if dp < 33 else value.hex()
+            offset += length
+        if not attrs:
+            return
+        self.last_report_attrs = self.apply_attributes(attrs)
+        self.received_attribute_names.update(self.last_report_attrs)
+        reported_mode = _mode_from_report(self.last_report_attrs)
+        if reported_mode is not None:
+            self._reported_mode = reported_mode
+            self._mode_event.set()
+            self._status_event.set()
+        self._last_traffic = time.monotonic()
+        self._state_event.set()
+        if self._update_callback:
+            self._update_callback()
 
-        updated = False
-
-        # Compact telemetry: flags[0] bit 4 = firmware telemetry DP
-        if flags[0] & 0x10:
-            _parse_compact_telemetry(data, self._state)
-            _LOGGER.debug(
-                "Compact telemetry from %s: mode=%d ch1=%drpm/%dW ch2=%drpm/%dW",
-                self._host, self._state.mode,
-                self._state.ch1_rpm, self._state.ch1_power,
-                self._state.ch2_rpm, self._state.ch2_power,
-            )
-            updated = True
-        elif _dp_is_flagged(flags, 34) and not any(
-            _dp_is_flagged(flags, dp) for dp in (35, 36)
-        ):
-            # DP 34 (Time) only = state notify (power + timestamp)
-            _parse_state_notify(data, self._state)
-            _LOGGER.debug(
-                "State notify from %s: hw_power=%s ts=%s",
-                self._host, bool(data[0] & 1) if data else None, self._state.timestamp,
-            )
-            updated = True
-        elif _dp_is_flagged(flags, 18):
-            # Any push with Mode DP -- extract mode
-            offset = _dp_data_offset(flags, 18)
-            if offset < len(data):
-                new_mode = data[offset]
-                self._state.mode = new_mode
-                self._state.is_on = new_mode != MODE_OFF
-                if self._state.is_on:
-                    self._state.last_active_mode = new_mode
-                _LOGGER.debug(
-                    "Mode update from %s: mode=%d (%s)",
-                    self._host, new_mode,
-                    MODE_NAMES.get(new_mode, "unknown"),
+    def apply_attributes(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Validate and merge named attributes, preserving existing valid values."""
+        accepted = dict(attrs)
+        state = self._state
+        for name, low, high in (("Mode", 0, 5), ("Time_Feed", 5, 120), ("Wash", 0, 255)):
+            if name not in accepted:
+                continue
+            value = accepted[name]
+            if type(value) is not int or not low <= value <= high:
+                _LOGGER.warning("Ignoring invalid %s=%r from %s", name, value, self._host)
+                accepted.pop(name)
+        for dp, name in ((20, "Model_A"), (21, "Model_B")):
+            if name in accepted and (
+                type(accepted[name]) is not int or accepted[name] not in (0, 1)
+            ):
+                _LOGGER.warning(
+                    "Ignoring invalid model DP %d=%r from %s (expected 0 or 1)",
+                    dp, accepted[name], self._host,
                 )
-                updated = True
-
-        # Config DPs (19-22): uint8 values packed sequentially
-        config_dps = [19, 20, 21, 22]
-        if any(_dp_is_flagged(flags, dp) for dp in config_dps):
-            model_set = False
-            for dp_id in config_dps:
-                if _dp_is_flagged(flags, dp_id):
-                    offset = _dp_data_offset(flags, dp_id)
-                    if offset < len(data):
-                        val = data[offset]
-                        if dp_id == 19:
-                            self._state.feed_duration = val
-                        elif dp_id == 20:
-                            # Model attributes are immutable - only set once
-                            if not self._state._model_initialized:
-                                self._state.model_a = val
-                            model_set = True
-                        elif dp_id == 21:
-                            # Model attributes are immutable - only set once
-                            if not self._state._model_initialized:
-                                self._state.model_b = val
-                            model_set = True
-                        elif dp_id == 22:
-                            self._state.wash_reminder = val
-            # Mark models as initialized after first config DP read
-            if model_set:
-                self._state._model_initialized = True
-            _LOGGER.debug(
-                "Config DPs from %s: feed=%d model_a=%d model_b=%d wash=%d",
-                self._host,
-                self._state.feed_duration,
-                self._state.model_a,
-                self._state.model_b,
-                self._state.wash_reminder,
-            )
-            updated = True
-
-        if not updated:
-            _LOGGER.debug(
-                "Push from %s: %dB flags=%s (ignored)",
-                self._host, len(payload), flags.hex(),
-            )
-
-        if updated:
-            self._state_event.set()
-            if self._update_callback:
-                self._update_callback()
+                accepted.pop(name)
+        for name, parser in (("Bak24", _parse_compact_telemetry), ("Time", _parse_state_notify)):
+            if name not in accepted:
+                continue
+            value = accepted[name]
+            try:
+                if not isinstance(value, str):
+                    raise ValueError("expected hex string")
+                raw = bytes.fromhex(value)
+                if name == "Bak24":
+                    if len(raw) < 17 or raw[0] not in MODE_NAMES:
+                        raise ValueError("invalid telemetry length or mode")
+                    parser(raw, state)
+                    program_mode = accepted.get("Mode", state.generic_attrs.get("Mode"))
+                    # Bak24's ON status does not replace an explicit running program mode.
+                    if raw[0] == MODE_ON and program_mode in (MODE_WATER_FLOW, MODE_PROGRAMMING):
+                        state.mode = program_mode
+                        state.last_active_mode = program_mode
+                else:
+                    if len(raw) != 7 or raw[1] > 99:
+                        raise ValueError("invalid timestamp length or year")
+                    clock = datetime(2000 + raw[1], *raw[2:])
+                    parser(raw, state)
+                    if value != self._clock_payload:
+                        self._clock_reference = (clock, time.monotonic())
+                        self._clock_payload = value
+            except ValueError as err:
+                _LOGGER.warning("Ignoring invalid %s from %s: %s", name, self._host, err)
+                accepted.pop(name)
+        mode = accepted.get("Mode")
+        if mode is not None:
+            state.mode = mode
+            state.is_on = mode != MODE_OFF
+            if state.is_on:
+                state.last_active_mode = mode
+        duration = accepted.get("Time_Feed")
+        if duration is not None:
+            state.feed_duration = duration
+        wash = accepted.get("Wash")
+        if wash is not None:
+            state.wash_reminder = wash
+        for dp, name, field_name in ((20, "Model_A", "model_a"), (21, "Model_B", "model_b")):
+            if name not in accepted:
+                continue
+            value = accepted[name]
+            cached = getattr(state, field_name)
+            if not state._model_initialized and dp not in state._initialized_models:
+                setattr(state, field_name, value)
+                state._initialized_models.add(dp)
+            elif value != cached:
+                _LOGGER.warning(
+                    "Device %s reported model DP %d=%d, which differs from cached %d; keeping cached model",
+                    self._host, dp, value, cached,
+                )
+        if state._initialized_models == {20, 21}:
+            state._model_initialized = True
+        state.generic_attrs.update(accepted)
+        return accepted
 
     # -- Public API ----------------------------------------------------
+
+    def controller_time_now(self) -> datetime | None:
+        if self._clock_reference is None:
+            return None
+        clock, received = self._clock_reference
+        return clock + timedelta(seconds=time.monotonic() - received)
+
+    async def async_request_full_status(self) -> None:
+        """Send the SDK's sequenced read request and the legacy read request."""
+        if not self.connected:
+            await self.async_connect()
+        assert self._writer is not None
+        self._writer.write(_build_frame(0x0093, payload=b"\x00\x00\x00\x03" + READ_CONFIG_DPS))
+        self._writer.write(_build_frame(CMD_DATA_SEND, payload=READ_CONFIG_DPS))
+        await self._writer.drain()
+        self._last_full_read = time.monotonic()
 
     async def async_request_status(self) -> MaxspectDeviceState:
         if not self.connected:
             await self.async_connect()
 
-        if self._state_event.is_set():
+        if self.lan_status_available:
             return self._state
 
+        self._status_event.clear()
+        await self.async_request_full_status()
         try:
-            await asyncio.wait_for(self._state_event.wait(), timeout=10)
-        except asyncio.TimeoutError:
+            await asyncio.wait_for(self._status_event.wait(), timeout=10)
+        except asyncio.TimeoutError as err:
             _LOGGER.warning("No status from %s within 10s", self._host)
+            raise MaxspectConnectionError("No operating-mode status received within 10s") from err
 
         return self._state
 
@@ -548,15 +633,32 @@ class MaxspectClient:
         await self.async_disconnect()
 
     async def async_set_mode(self, mode: int) -> None:
-        """Write Mode DP (18) to the device."""
+        """Write Mode DP (18), then wait for an actual device mode report."""
+        async with self._mode_lock:
+            await self._async_set_mode(mode)
+
+    async def _async_set_mode(self, mode: int) -> None:
+        """Serialize writes so another command cannot consume confirmation."""
+        if mode not in MODE_NAMES:
+            raise ValueError("Unsupported Gyre mode")
         if not self.connected:
             await self.async_connect()
         assert self._writer is not None
 
+        self._mode_event.clear()
         payload = _build_write_payload(dp_id=18, value=mode)
         self._writer.write(_build_frame(CMD_DATA_SEND, payload=payload))
         await self._writer.drain()
         _LOGGER.debug("Sent Mode=%d to %s", mode, self._host)
+        try:
+            async with asyncio.timeout(8):
+                while True:
+                    await self._mode_event.wait()
+                    self._mode_event.clear()
+                    if self._reported_mode is not None and _mode_matches_request(mode, self._reported_mode):
+                        return
+        except TimeoutError as err:
+            raise MaxspectConnectionError("Device did not confirm the requested mode") from err
 
     async def async_turn_on(self) -> None:
         """Turn the pump on by restoring the last active mode."""
